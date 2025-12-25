@@ -1,0 +1,202 @@
+[
+  {
+    "ticket_id": "TICK-001",
+    "title": "Users unable to log in after password reset",
+    "description": "Multiple users reporting authentication failures after performing password reset. Error message: 'Invalid credentials'. Issue started after recent security patch deployment.",
+    "resolution": "Found that the password hash algorithm was updated but session tokens weren't invalidated. Solution: Clear all active sessions and force re-authentication. Implemented automatic session cleanup on password change.",
+    "category": "Authentication",
+    "priority": "High",
+    "created_date": "2024-01-15",
+    "resolved_date": "2024-01-15"
+  },
+  {
+    "ticket_id": "TICK-002",
+    "title": "Database connection timeout in production",
+    "description": "Application experiencing intermittent 500 errors. Logs show 'connection pool exhausted' and 'timeout waiting for connection'. Affects approximately 20% of requests during peak hours.",
+    "resolution": "Database connection pool was sized too small for peak load. Increased max_connections from 20 to 100. Added connection pooling monitoring and alerts. Optimized long-running queries that were holding connections.",
+    "category": "Database",
+    "priority": "Critical",
+    "created_date": "2024-01-18",
+    "resolved_date": "2024-01-18"
+  },
+  {
+    "ticket_id": "TICK-003",
+    "title": "Payment processing fails for international cards",
+    "description": "Customers using non-US credit cards receiving 'Payment declined' errors. Payment gateway returns error code 402. Issue only affects cards issued outside United States.",
+    "resolution": "Payment gateway configuration was missing international card processing flag. Updated gateway settings to enable international transactions. Added country-specific currency conversion. Retested with cards from EU, UK, and APAC regions.",
+    "category": "Payment",
+    "priority": "High",
+    "created_date": "2024-01-20",
+    "resolved_date": "2024-01-21"
+  },
+  {
+    "ticket_id": "TICK-004",
+    "title": "Mobile app crashes on iOS 17",
+    "description": "App crashes immediately on launch for users who upgraded to iOS 17. Crash reports show EXC_BAD_ACCESS in networking module. Affects approximately 30% of iOS user base.",
+    "resolution": "iOS 17 deprecated certain networking APIs we were using. Updated URLSession implementation to use new async/await pattern. Removed deprecated NSURLConnection usage. Submitted updated build to App Store with iOS 17 compatibility.",
+    "category": "Mobile",
+    "priority": "Critical",
+    "created_date": "2024-01-22",
+    "resolved_date": "2024-01-23"
+  },
+  {
+    "ticket_id": "TICK-005",
+    "title": "Memory leak in background worker process",
+    "description": "Background job processor showing steady memory increase over time. Process killed by OS after reaching 8GB memory usage. Requires daily restart to maintain functionality.",
+    "resolution": "Memory profiling revealed unclosed database cursors in batch processing loop. Added explicit cursor.close() calls and implemented context managers for all DB operations. Memory usage now stable at 500MB. Set up memory usage monitoring alerts.",
+    "category": "Performance",
+    "priority": "High",
+    "created_date": "2024-01-25",
+    "resolved_date": "2024-01-26"
+  },
+  {
+    "ticket_id": "TICK-006",
+    "title": "Email notifications not being delivered",
+    "description": "Users reporting they're not receiving password reset and confirmation emails. SMTP server logs show successful sends, but emails never arrive in inbox or spam folder.",
+    "resolution": "Email service provider had blacklisted our sending IP due to spam complaints. Implemented SPF, DKIM, and DMARC records. Switched to dedicated IP address with proper warmup process. Added email deliverability monitoring.",
+    "category": "Email",
+    "priority": "High",
+    "created_date": "2024-01-28",
+    "resolved_date": "2024-01-29"
+  },
+  {
+    "ticket_id": "TICK-007",
+    "title": "Search functionality returns no results",
+    "description": "Product search returning empty results for queries that should match. Elasticsearch cluster health showing yellow status. Index size growing abnormally large.",
+    "resolution": "Elasticsearch index had corrupted shards after power outage. Performed cluster health check, deleted corrupted index, and rebuilt from database. Implemented automated daily index health checks and backup strategy.",
+    "category": "Search",
+    "priority": "Critical",
+    "created_date": "2024-02-01",
+    "resolved_date": "2024-02-01"
+  },
+  {
+    "ticket_id": "TICK-008",
+    "title": "File uploads failing for large files",
+    "description": "Users unable to upload files larger than 5MB. Progress bar reaches 100% but then shows 'Upload failed' error. Works fine for smaller files. Browser console shows 413 error.",
+    "resolution": "Nginx was configured with default 1MB request body size limit. Updated nginx.conf to set client_max_body_size to 50MB. Also increased Node.js Express body-parser limit. Added validation to show friendly error for files exceeding 50MB.",
+    "category": "File Upload",
+    "priority": "Medium",
+    "created_date": "2024-02-03",
+    "resolved_date": "2024-02-03"
+  },
+  {
+    "ticket_id": "TICK-009",
+    "title": "API rate limiting too aggressive",
+    "description": "Legitimate users hitting rate limits during normal usage. Current limit is 100 requests per minute. Users getting 429 Too Many Requests errors, especially when using batch operations.",
+    "resolution": "Analyzed API usage patterns and found limit was indeed too restrictive. Increased rate limit to 500 requests per minute for authenticated users. Implemented tiered rate limiting based on account type. Added X-RateLimit headers to API responses.",
+    "category": "API",
+    "priority": "Medium",
+    "created_date": "2024-02-05",
+    "resolved_date": "2024-02-06"
+  },
+  {
+    "ticket_id": "TICK-010",
+    "title": "Dashboard loading extremely slowly",
+    "description": "Admin dashboard takes 30+ seconds to load. Browser DevTools show multiple slow database queries. Page becomes unresponsive during load. Affects all users with admin privileges.",
+    "resolution": "Dashboard was making N+1 queries for user statistics. Implemented query optimization using JOIN statements and added database indexes on frequently queried columns. Introduced Redis caching for aggregate statistics with 5-minute TTL. Load time reduced to under 2 seconds.",
+    "category": "Performance",
+    "priority": "High",
+    "created_date": "2024-02-08",
+    "resolved_date": "2024-02-09"
+  },
+  {
+    "ticket_id": "TICK-011",
+    "title": "SSO authentication broken after upgrade",
+    "description": "Single Sign-On integration with corporate SAML provider failing. Users redirected to SSO portal but then receive 'Invalid SAML response' error when redirected back. Started after v2.5 upgrade.",
+    "resolution": "Upgrade changed default SAML signature algorithm from SHA-1 to SHA-256, but IdP configuration wasn't updated. Coordinated with IT team to update IdP settings. Added configuration option to specify signature algorithm. Tested with multiple SAML providers.",
+    "category": "Authentication",
+    "priority": "Critical",
+    "created_date": "2024-02-10",
+    "resolved_date": "2024-02-11"
+  },
+  {
+    "ticket_id": "TICK-012",
+    "title": "Scheduled reports not generating",
+    "description": "Daily scheduled reports stopped generating three days ago. Cron job shows as running in logs but no PDF files are created. Manual report generation works correctly.",
+    "resolution": "Disk space was full on the reports server (100% usage). Old report files were not being cleaned up. Implemented automated cleanup of reports older than 30 days. Increased disk space and added disk usage monitoring alerts.",
+    "category": "Reporting",
+    "priority": "Medium",
+    "created_date": "2024-02-12",
+    "resolved_date": "2024-02-12"
+  },
+  {
+    "ticket_id": "TICK-013",
+    "title": "Webhook deliveries failing intermittently",
+    "description": "Outgoing webhooks to customer endpoints timing out. Retry logic exhausting all attempts. Some webhooks succeed while others fail for same endpoint. No pattern to failures.",
+    "resolution": "Default timeout was 5 seconds but some customer endpoints were slow. Increased timeout to 30 seconds. Implemented exponential backoff for retries. Added webhook delivery status dashboard for customers to monitor. Persisted failed webhooks to dead letter queue.",
+    "category": "Integration",
+    "priority": "High",
+    "created_date": "2024-02-14",
+    "resolved_date": "2024-02-15"
+  },
+  {
+    "ticket_id": "TICK-014",
+    "title": "Session timeout too short",
+    "description": "Users complaining about being logged out too frequently. Currently set to 15 minutes. Particularly problematic for users filling out long forms, losing unsaved data when session expires.",
+    "resolution": "Extended session timeout to 2 hours for active users. Implemented activity-based session renewal (extends on any user action). Added auto-save functionality for forms with localStorage backup. Implemented 'session about to expire' warning modal.",
+    "category": "Authentication",
+    "priority": "Medium",
+    "created_date": "2024-02-16",
+    "resolved_date": "2024-02-17"
+  },
+  {
+    "ticket_id": "TICK-015",
+    "title": "Export to CSV producing corrupt files",
+    "description": "Data export feature generating CSV files that can't be opened in Excel. File appears to have encoding issues with special characters. Particularly affects records with non-ASCII characters.",
+    "resolution": "Export was using default UTF-8 encoding without BOM, causing Excel to misinterpret character encoding. Changed to UTF-8 with BOM for Excel compatibility. Added proper escaping for special characters in CSV fields. Included character encoding in filename.",
+    "category": "Export",
+    "priority": "Medium",
+    "created_date": "2024-02-18",
+    "resolved_date": "2024-02-19"
+  },
+  {
+    "ticket_id": "TICK-016",
+    "title": "Two-factor authentication codes not working",
+    "description": "Users unable to log in with TOTP codes from authenticator apps. Codes shown as invalid even when entered immediately after generation. Affects random subset of users.",
+    "resolution": "Server time was drifting by 2 minutes due to misconfigured NTP. TOTP codes are time-sensitive and were outside acceptance window. Configured NTP synchronization and verified time accuracy. Added time drift monitoring. Increased TOTP acceptance window to ±1 time step.",
+    "category": "Authentication",
+    "priority": "High",
+    "created_date": "2024-02-20",
+    "resolved_date": "2024-02-20"
+  },
+  {
+    "ticket_id": "TICK-017",
+    "title": "Real-time notifications delayed by several minutes",
+    "description": "WebSocket notifications arriving 3-5 minutes late. Users seeing chat messages and alerts significantly delayed. WebSocket connection appears stable, no disconnections in logs.",
+    "resolution": "Message broker (RabbitMQ) had accumulated a large queue backlog. Consumer was processing messages slower than they were being produced. Increased number of consumer workers from 2 to 10. Optimized message processing logic. Added queue length monitoring.",
+    "category": "Real-time",
+    "priority": "High",
+    "created_date": "2024-02-22",
+    "resolved_date": "2024-02-23"
+  },
+  {
+    "ticket_id": "TICK-018",
+    "title": "API returning inconsistent data",
+    "description": "Same API endpoint returning different results for identical requests within seconds. Appears to be caching issue. GET /api/users/:id sometimes returns stale data.",
+    "resolution": "Load balancer was routing to 3 app servers with separate local caches. Cache invalidation only happening on the server that processed the update. Migrated to centralized Redis cache shared across all servers. Implemented cache invalidation via pub/sub.",
+    "category": "API",
+    "priority": "Critical",
+    "created_date": "2024-02-25",
+    "resolved_date": "2024-02-26"
+  },
+  {
+    "ticket_id": "TICK-019",
+    "title": "Image thumbnails not generating",
+    "description": "Newly uploaded images not showing thumbnails. Background job for thumbnail generation appears to be stuck. Queue shows 5000+ pending jobs. Old thumbnails still display correctly.",
+    "resolution": "ImageMagick process was hanging on certain corrupted image files. Implemented timeout for image processing operations. Added validation to reject corrupted files at upload. Cleared stuck jobs and reprocessed with timeout protection. Added failure logging for investigation.",
+    "category": "Media Processing",
+    "priority": "Medium",
+    "created_date": "2024-02-27",
+    "resolved_date": "2024-02-28"
+  },
+  {
+    "ticket_id": "TICK-020",
+    "title": "Cannot delete user accounts",
+    "description": "Delete account functionality failing with foreign key constraint errors. Database shows referential integrity violations. Affects GDPR compliance for user data deletion requests.",
+    "resolution": "Deletion logic was missing cascading deletes for related records. Implemented proper cleanup order: delete user sessions, then activities, then preferences, then user record. Added soft delete option for audit trail. Created GDPR-compliant data anonymization as alternative to hard delete.",
+    "category": "User Management",
+    "priority": "High",
+    "created_date": "2024-03-01",
+    "resolved_date": "2024-03-02"
+  }
+]

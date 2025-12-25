@@ -1,0 +1,107 @@
+[
+  {
+    "query_id": "Q1",
+    "question": "How do I fix authentication failures after password reset?",
+    "relevant_ticket_ids": ["TICK-001"],
+    "category": "Authentication",
+    "reference_answer": "Clear all active sessions and force re-authentication. Implement automatic session cleanup on password change to prevent stale session tokens from causing authentication failures."
+  },
+  {
+    "query_id": "Q2",
+    "question": "What causes database connection timeout errors?",
+    "relevant_ticket_ids": ["TICK-002"],
+    "category": "Database",
+    "reference_answer": "Database connection pool was sized too small for peak load. Increase max_connections parameter, add connection pooling monitoring, and optimize long-running queries that hold connections."
+  },
+  {
+    "query_id": "Q3",
+    "question": "Why do international credit card payments fail?",
+    "relevant_ticket_ids": ["TICK-003"],
+    "category": "Payment",
+    "reference_answer": "Payment gateway configuration was missing international card processing flag. Enable international transactions in gateway settings and add country-specific currency conversion."
+  },
+  {
+    "query_id": "Q4",
+    "question": "App crashes on iOS 17, how to fix?",
+    "relevant_ticket_ids": ["TICK-004"],
+    "category": "Mobile",
+    "reference_answer": "iOS 17 deprecated certain networking APIs. Update URLSession implementation to use new async/await pattern and remove deprecated NSURLConnection usage."
+  },
+  {
+    "query_id": "Q5",
+    "question": "Memory leak in background worker process",
+    "relevant_ticket_ids": ["TICK-005"],
+    "category": "Performance",
+    "reference_answer": "Unclosed database cursors in batch processing loop cause memory leaks. Add explicit cursor.close() calls and implement context managers for all database operations."
+  },
+  {
+    "query_id": "Q6",
+    "question": "Emails not being delivered to users",
+    "relevant_ticket_ids": ["TICK-006"],
+    "category": "Email",
+    "reference_answer": "Email service provider blacklisted sending IP due to spam complaints. Implement SPF, DKIM, and DMARC records, switch to dedicated IP address, and add email deliverability monitoring."
+  },
+  {
+    "query_id": "Q7",
+    "question": "Search returns no results even with valid queries",
+    "relevant_ticket_ids": ["TICK-007"],
+    "category": "Search",
+    "reference_answer": "Elasticsearch index had corrupted shards. Delete corrupted index, rebuild from database, and implement automated daily index health checks and backup strategy."
+  },
+  {
+    "query_id": "Q8",
+    "question": "File upload fails for large files",
+    "relevant_ticket_ids": ["TICK-008"],
+    "category": "File Upload",
+    "reference_answer": "Nginx configured with default 1MB request body size limit. Update nginx.conf to set client_max_body_size to appropriate value and increase Node.js Express body-parser limit."
+  },
+  {
+    "query_id": "Q9",
+    "question": "How to fix users hitting API rate limits?",
+    "relevant_ticket_ids": ["TICK-009"],
+    "category": "API",
+    "reference_answer": "Increase rate limit for authenticated users, implement tiered rate limiting based on account type, and add X-RateLimit headers to API responses."
+  },
+  {
+    "query_id": "Q10",
+    "question": "Dashboard loading very slowly",
+    "relevant_ticket_ids": ["TICK-010"],
+    "category": "Performance",
+    "reference_answer": "Dashboard was making N+1 queries. Implement query optimization using JOIN statements, add database indexes on frequently queried columns, and introduce Redis caching for aggregate statistics."
+  },
+  {
+    "query_id": "Q11",
+    "question": "SSO login broken after system upgrade",
+    "relevant_ticket_ids": ["TICK-011"],
+    "category": "Authentication",
+    "reference_answer": "Upgrade changed default SAML signature algorithm from SHA-1 to SHA-256. Update IdP configuration to match and add configuration option to specify signature algorithm."
+  },
+  {
+    "query_id": "Q12",
+    "question": "Scheduled reports not generating",
+    "relevant_ticket_ids": ["TICK-012"],
+    "category": "Reporting",
+    "reference_answer": "Disk space was full on reports server. Implement automated cleanup of old reports, increase disk space, and add disk usage monitoring alerts."
+  },
+  {
+    "query_id": "Q13",
+    "question": "Webhooks timing out intermittently",
+    "relevant_ticket_ids": ["TICK-013"],
+    "category": "Integration",
+    "reference_answer": "Increase timeout to 30 seconds, implement exponential backoff for retries, add webhook delivery status dashboard, and persist failed webhooks to dead letter queue."
+  },
+  {
+    "query_id": "Q14",
+    "question": "Users getting logged out too frequently",
+    "relevant_ticket_ids": ["TICK-014"],
+    "category": "Authentication",
+    "reference_answer": "Extend session timeout to 2 hours for active users, implement activity-based session renewal, add auto-save for forms with localStorage backup, and implement session expiry warning."
+  },
+  {
+    "query_id": "Q15",
+    "question": "CSV export files are corrupted",
+    "relevant_ticket_ids": ["TICK-015"],
+    "category": "Export",
+    "reference_answer": "Change to UTF-8 with BOM for Excel compatibility, add proper escaping for special characters in CSV fields, and include character encoding in filename."
+  }
+]
