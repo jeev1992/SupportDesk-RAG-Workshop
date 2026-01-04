@@ -17,29 +17,34 @@
 
 ## Exercise 2: Experiment with Different Embedding Models (Medium)
 
-**Task**: Compare results using different embedding models.
+**Task**: Compare results using different OpenAI embedding models.
 
 **Models to try**:
 ```python
-# Small and fast
-model = SentenceTransformer('all-MiniLM-L6-v2')  # 384 dims
+from openai import OpenAI
 
-# Larger and more accurate
-model = SentenceTransformer('all-mpnet-base-v2')  # 768 dims
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-# Optimized for semantic similarity
-model = SentenceTransformer('multi-qa-MiniLM-L6-cos-v1')  # 384 dims
+# Small and fast (1536 dimensions)
+model = 'text-embedding-3-small'
+
+# Larger and more accurate (3072 dimensions)
+model = 'text-embedding-3-large'
+
+# Legacy model (1536 dimensions)
+model = 'text-embedding-ada-002'
 ```
 
 **Steps**:
-1. Run the demo with each model
+1. Modify the demo to use each model
 2. Compare the top-5 results for the same query
-3. Note differences in similarity scores
+3. Note differences in similarity scores and retrieval quality
 
 **Questions**:
 - Which model gives the most relevant results?
-- How does embedding dimension affect quality?
-- What's the trade-off between model size and accuracy?
+- How does the larger model (text-embedding-3-large) compare?
+- Is the quality improvement worth the higher cost?
+- What's the trade-off between model size, cost, and accuracy?
 
 ---
 
@@ -57,8 +62,12 @@ model = SentenceTransformer('multi-qa-MiniLM-L6-cos-v1')  # 384 dims
 **Steps**:
 1. Create a function to search for similar tickets:
 ```python
-def search_tickets(query, tickets, embeddings, model, top_k=5):
-    query_emb = model.encode([query])
+def search_tickets(query, tickets, embeddings, client, model_name, top_k=5):
+    # Generate query embedding
+    response = client.embeddings.create(input=[query], model=model_name)
+    query_emb = np.array([response.data[0].embedding])
+    
+    # Calculate similarities
     similarities = cosine_similarity(query_emb, embeddings)[0]
     top_indices = np.argsort(similarities)[::-1][:top_k]
     
@@ -91,8 +100,11 @@ def search_tickets(query, tickets, embeddings, model, top_k=5):
 
 **Starter code**:
 ```python
-def search_with_threshold(query, tickets, embeddings, model, threshold=0.5, top_k=5):
-    query_emb = model.encode([query])
+def search_with_threshold(query, tickets, embeddings, client, model_name, threshold=0.5, top_k=5):
+    # Generate query embedding
+    response = client.embeddings.create(input=[query], model=model_name)
+    query_emb = np.array([response.data[0].embedding])
+    
     similarities = cosine_similarity(query_emb, embeddings)[0]
     
     # TODO: Filter by threshold
@@ -114,6 +126,11 @@ def search_with_threshold(query, tickets, embeddings, model, threshold=0.5, top_
 **Steps**:
 1. Generate embeddings for these texts:
 ```python
+from openai import OpenAI
+import os
+
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
 texts = [
     "User authentication failed",
     "Login error",
@@ -125,8 +142,12 @@ texts = [
 2. Calculate pairwise cosine similarities:
 ```python
 from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
-embeddings = model.encode(texts)
+# Generate embeddings
+response = client.embeddings.create(input=texts, model='text-embedding-3-small')
+embeddings = np.array([data.embedding for data in response.data])
+
 similarity_matrix = cosine_similarity(embeddings)
 print(similarity_matrix)
 ```

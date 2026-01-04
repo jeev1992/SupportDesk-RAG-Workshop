@@ -1,422 +1,577 @@
 # -*- coding: utf-8 -*-
 """
-Hour 4: RAG Evaluation & Metrics Demo
-======================================
+RAG Evaluation Demo
+===================
 
 This demo teaches:
-1. Retrieval metrics: Precision@K, Recall@K, F1, MRR
-2. Generation metrics: ROUGE-L, BLEU
-3. Creating evaluation datasets
-4. Systematic testing and improvement
+1. Two-layer evaluation approach for RAG systems
+2. RETRIEVAL LAYER: Precision, Recall, F1 Score
+3. GENERATION LAYER: Groundedness (Faithfulness), Response Completeness
+4. Using LLM-as-judge for generation metrics
+5. Creating comprehensive evaluation reports
 """
 
 import json
 import os
 import numpy as np
-from collections import defaultdict
-from rouge_score import rouge_scorer
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from openai import OpenAI
-from sklearn.metrics.pairwise import cosine_similarity
-
-# LangChain imports
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain.docstore.document import Document
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 print("="*80)
-print("HOUR 4: RAG EVALUATION & METRICS")
+print("RAG EVALUATION: TWO-LAYER APPROACH")
 print("="*80)
+print("\nLayer 1: RETRIEVAL (Precision, Recall, F1)")
+print("Layer 2: GENERATION (Groundedness, Completeness)")
 
 # ============================================================================
-# PART 1: Load Data and Build System
+# PART 1: Setup - Load Data and Build RAG System
 # ============================================================================
 print("\n" + "="*80)
-print("PART 1: Setup Evaluation Environment")
+print("PART 1: Setup RAG System for Evaluation")
 print("="*80)
 
 # Load tickets
-with open('../data/synthetic_tickets.json', 'r') as f:
+with open('data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
     tickets = json.load(f)
 print(f"✓ Loaded {len(tickets)} support tickets")
 
-# Load evaluation queries
-with open('evaluation_queries.json', 'r') as f:
+# Load evaluation queries with ground truth
+with open('modules/5_evaluation/evaluation_queries.json', 'r', encoding='utf-8') as f:
     eval_queries = json.load(f)
-print(f"✓ Loaded {len(eval_queries)} evaluation queries")
+print(f"✓ Loaded {len(eval_queries)} evaluation queries with ground truth")
 
-# Build vector store
+# Build documents
 documents = []
 for ticket in tickets:
-    content = f"""
-Ticket ID: {ticket['ticket_id']}
+    content = f"""Ticket ID: {ticket['ticket_id']}
 Title: {ticket['title']}
 Category: {ticket['category']}
 Priority: {ticket['priority']}
 Description: {ticket['description']}
-Resolution: {ticket['resolution']}
-    """.strip()
+Resolution: {ticket['resolution']}"""
     
     doc = Document(
         page_content=content,
-        metadata={'ticket_id': ticket['ticket_id']}
+        metadata={
+            'ticket_id': ticket['ticket_id'],
+            'title': ticket['title'],
+            'category': ticket['category']
+        }
     )
     documents.append(doc)
 
+# Initialize embeddings and LLM with timeout
 embeddings = OpenAIEmbeddings(
-    model=os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
+    model=os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+    request_timeout=30
 )
-vector_store = Chroma.from_documents(
-    documents=documents,
-    embedding=embeddings,
-    collection_name="eval_store"
-)
-print("✓ Vector store built")
+
+# Use direct OpenAI client instead of LangChain ChatOpenAI (fixes connection pooling issue)
+openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'), timeout=30.0, max_retries=2)
+chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini')
+
+print("✓ OpenAI models initialized (30s timeout)")
+
+# Test API connection
+print("\nTesting OpenAI API connection...")
+try:
+    test_response = openai_client.chat.completions.create(
+        model=chat_model,
+        messages=[{"role": "user", "content": "Say 'OK'"}],
+        max_tokens=5
+    )
+    print("✓ API connection successful")
+except Exception as e:
+    print(f"✗ API connection failed: {str(e)[:100]}")
+    print("\nPlease check:")
+    print("  1. OPENAI_API_KEY is set correctly in .env")
+    print("  2. You have internet connectivity")
+    print("  3. Your API key is valid and has credits")
+    exit(1)
+
+# Build vector store
+vector_store = FAISS.from_documents(documents, embeddings)
+print("✓ Vector store built with FAISS")
+
+# Create simple RAG function
+def generate_answer(query, k=3):
+    """Retrieve context and generate answer"""
+    # Retrieve documents
+    docs = vector_store.similarity_search(query, k=k)
+    
+    # Build context
+    context = "\n\n".join([doc.page_content for doc in docs])
+    
+    # Create prompt
+    prompt = f"""You are a technical support assistant. Answer the question using ONLY the provided context.
+
+Context:
+{context}
+
+Question: {query}
+
+Answer (cite ticket IDs):"""
+    
+    # Generate answer using direct OpenAI client
+    response = openai_client.chat.completions.create(
+        model=chat_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0
+    )
+    answer = response.choices[0].message.content
+    
+    return {'answer': answer, 'source_documents': docs}
+
+print("✓ RAG function ready")
 
 # ============================================================================
-# PART 2: Retrieval Metrics
+# PART 2: RETRIEVAL LAYER EVALUATION
 # ============================================================================
 print("\n" + "="*80)
-print("PART 2: Evaluating Retrieval Quality")
+print("PART 2: RETRIEVAL LAYER EVALUATION")
 print("="*80)
+print("\nMetrics: Precision, Recall, F1 Score")
+print("Measures: Are we retrieving the right documents?")
 
-def precision_at_k(retrieved_ids, relevant_ids, k):
+def calculate_retrieval_metrics(retrieved_ids, relevant_ids, k=3):
     """
-    Precision@K = (# relevant retrieved in top-k) / k
+    Calculate Precision, Recall, and F1 at k
+    
+    Precision@k = (relevant docs in top-k) / k
+    Recall@k = (relevant docs in top-k) / (total relevant docs)
+    F1@k = harmonic mean of Precision and Recall
     """
-    retrieved_k = set(retrieved_ids[:k])
-    relevant = set(relevant_ids)
-    return len(retrieved_k & relevant) / k
-
-def recall_at_k(retrieved_ids, relevant_ids, k):
-    """
-    Recall@K = (# relevant retrieved in top-k) / (total relevant)
-    """
-    retrieved_k = set(retrieved_ids[:k])
-    relevant = set(relevant_ids)
-    return len(retrieved_k & relevant) / len(relevant) if relevant else 0
-
-def f1_at_k(retrieved_ids, relevant_ids, k):
-    """
-    F1@K = harmonic mean of Precision@K and Recall@K
-    """
-    p = precision_at_k(retrieved_ids, relevant_ids, k)
-    r = recall_at_k(retrieved_ids, relevant_ids, k)
-    return 2 * (p * r) / (p + r) if (p + r) > 0 else 0
-
-def mean_reciprocal_rank(retrieved_ids, relevant_ids):
-    """
-    MRR = 1 / rank of first relevant document
-    """
-    for rank, doc_id in enumerate(retrieved_ids, 1):
-        if doc_id in relevant_ids:
-            return 1.0 / rank
-    return 0.0
+    retrieved_set = set(retrieved_ids[:k])
+    relevant_set = set(relevant_ids)
+    
+    # True positives: relevant docs that were retrieved
+    tp = len(retrieved_set & relevant_set)
+    
+    # Precision: what % of retrieved docs are relevant?
+    precision = tp / k if k > 0 else 0
+    
+    # Recall: what % of relevant docs were retrieved?
+    recall = tp / len(relevant_set) if len(relevant_set) > 0 else 0
+    
+    # F1: harmonic mean balancing precision and recall
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    
+    return {
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'true_positives': tp,
+        'retrieved_count': k,
+        'relevant_count': len(relevant_set)
+    }
 
 # Evaluate retrieval for all queries
+print("\nEvaluating retrieval for all queries...")
 retrieval_results = []
 
-for eval_query in eval_queries:
+for idx, eval_query in enumerate(eval_queries, 1):
     query = eval_query['question']
     relevant_ids = eval_query['relevant_ticket_ids']
     
-    # Retrieve documents
-    results = vector_store.similarity_search(query, k=5)
-    retrieved_ids = [doc.metadata['ticket_id'] for doc in results]
+    print(f"  [{idx}/{len(eval_queries)}] Processing query...", end='\r')
     
-    # Compute metrics
-    metrics = {
-        'query_id': eval_query['query_id'],
-        'question': query,
-        'retrieved': retrieved_ids,
-        'relevant': relevant_ids,
-        'precision@1': precision_at_k(retrieved_ids, relevant_ids, 1),
-        'precision@3': precision_at_k(retrieved_ids, relevant_ids, 3),
-        'precision@5': precision_at_k(retrieved_ids, relevant_ids, 5),
-        'recall@1': recall_at_k(retrieved_ids, relevant_ids, 1),
-        'recall@3': recall_at_k(retrieved_ids, relevant_ids, 3),
-        'recall@5': recall_at_k(retrieved_ids, relevant_ids, 5),
-        'f1@3': f1_at_k(retrieved_ids, relevant_ids, 3),
-        'mrr': mean_reciprocal_rank(retrieved_ids, relevant_ids)
-    }
-    retrieval_results.append(metrics)
+    try:
+        # Retrieve documents
+        results = vector_store.similarity_search(query, k=5)
+        retrieved_ids = [doc.metadata['ticket_id'] for doc in results]
+        
+        # Calculate metrics at k=3
+        metrics = calculate_retrieval_metrics(retrieved_ids, relevant_ids, k=3)
+        metrics['query_id'] = eval_query['query_id']
+        metrics['question'] = query
+        metrics['retrieved'] = retrieved_ids[:3]
+        metrics['relevant'] = relevant_ids
+        
+        retrieval_results.append(metrics)
+    except Exception as e:
+        print(f"\n  ⚠ Error on query {idx}: {str(e)[:50]}")
+        continue
 
-# Aggregate metrics
+print(f"\n✓ Completed retrieval evaluation for {len(retrieval_results)} queries")
+
+# Aggregate results
 print("\n" + "-"*80)
 print("RETRIEVAL METRICS (Averaged across all queries)")
 print("-"*80)
 
-avg_metrics = {
-    'Precision@1': np.mean([r['precision@1'] for r in retrieval_results]),
-    'Precision@3': np.mean([r['precision@3'] for r in retrieval_results]),
-    'Precision@5': np.mean([r['precision@5'] for r in retrieval_results]),
-    'Recall@1': np.mean([r['recall@1'] for r in retrieval_results]),
-    'Recall@3': np.mean([r['recall@3'] for r in retrieval_results]),
-    'Recall@5': np.mean([r['recall@5'] for r in retrieval_results]),
-    'F1@3': np.mean([r['f1@3'] for r in retrieval_results]),
-    'MRR': np.mean([r['mrr'] for r in retrieval_results])
-}
+avg_precision = np.mean([r['precision'] for r in retrieval_results])
+avg_recall = np.mean([r['recall'] for r in retrieval_results])
+avg_f1 = np.mean([r['f1'] for r in retrieval_results])
 
-for metric, value in avg_metrics.items():
-    print(f"{metric:15} : {value:.4f}")
+print(f"\nPrecision@3: {avg_precision:.4f}")
+print(f"  → What % of retrieved documents are actually relevant?")
+print(f"  → Target: > 0.80 for production")
 
-# Show detailed results for a few queries
+print(f"\nRecall@3:    {avg_recall:.4f}")
+print(f"  → What % of all relevant documents did we find?")
+print(f"  → Target: > 0.70 for production")
+
+print(f"\nF1 Score@3:  {avg_f1:.4f}")
+print(f"  → Balanced measure of retrieval quality")
+print(f"  → Target: > 0.75 for production")
+
+# Show per-query breakdown
 print("\n" + "-"*80)
-print("DETAILED RESULTS (Sample Queries)")
+print("PER-QUERY RETRIEVAL RESULTS (Sample)")
 print("-"*80)
 
 for i in range(min(3, len(retrieval_results))):
     result = retrieval_results[i]
-    print(f"\n{result['query_id']}: {result['question']}")
-    print(f"  Relevant: {result['relevant']}")
-    print(f"  Retrieved: {result['retrieved'][:3]}")
-    print(f"  Precision@3: {result['precision@3']:.2f}")
-    print(f"  Recall@3: {result['recall@3']:.2f}")
-    print(f"  F1@3: {result['f1@3']:.2f}")
+    print(f"\n{result['query_id']}: {result['question'][:60]}...")
+    print(f"  Relevant:  {result['relevant']}")
+    print(f"  Retrieved: {result['retrieved']}")
+    print(f"  Precision: {result['precision']:.2f} | Recall: {result['recall']:.2f} | F1: {result['f1']:.2f}")
 
 # ============================================================================
-# PART 3: Generation Metrics (ROUGE & BLEU)
+# PART 3: GENERATION LAYER EVALUATION
 # ============================================================================
 print("\n" + "="*80)
-print("PART 3: Evaluating Generated Answers")
+print("PART 3: GENERATION LAYER EVALUATION")
 print("="*80)
+print("\nMetrics: Groundedness, Response Completeness")
+print("Measures: Is the generated answer faithful and complete?")
 
-# Initialize ROUGE scorer
-scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+# Initialize OpenAI client for LLM-as-judge (reuse the same client)
+client = openai_client
 
-def evaluate_answer(generated, reference):
+def evaluate_groundedness(answer, context_docs):
     """
-    Evaluate generated answer against reference answer
-    """
-    # ROUGE scores
-    rouge_scores = scorer.score(reference, generated)
+    Groundedness (Faithfulness): Is the answer supported by the retrieved context?
+    Uses LLM-as-judge to check if answer contains hallucinations
     
-    # BLEU score
-    reference_tokens = reference.lower().split()
-    generated_tokens = generated.lower().split()
-    smoothing = SmoothingFunction().method1
-    bleu = sentence_bleu([reference_tokens], generated_tokens, smoothing_function=smoothing)
+    Returns: score 0.0-1.0 (higher = more grounded)
+    """
+    context = "\n\n".join([doc.page_content for doc in context_docs])
     
-    return {
-        'rouge1_f': rouge_scores['rouge1'].fmeasure,
-        'rouge2_f': rouge_scores['rouge2'].fmeasure,
-        'rougeL_f': rouge_scores['rougeL'].fmeasure,
-        'bleu': bleu
-    }
+    prompt = f"""Evaluate if the ANSWER is fully supported by the CONTEXT. Check for hallucinations or unsupported claims.
 
-# Example: Simulate generated answers (in real scenario, these come from LLM)
-print("\nExample Answer Evaluation:")
-print("-"*80)
+CONTEXT:
+{context}
 
-example_reference = eval_queries[0]['reference_answer']
-print(f"\nReference Answer:\n{example_reference}")
+ANSWER:
+{answer}
 
-# Good answer (high overlap)
-good_answer = "Clear all active sessions and implement automatic session cleanup when users change passwords to prevent stale tokens from causing authentication failures."
-print(f"\nGenerated Answer (Good):\n{good_answer}")
+Rate the groundedness from 0 to 10:
+- 10: Every claim in the answer is directly supported by the context
+- 7-9: Most claims supported, minor unsupported details
+- 4-6: Some claims supported, some speculation or external knowledge
+- 1-3: Little support from context, mostly hallucinated
+- 0: Completely hallucinated, no relation to context
 
-good_scores = evaluate_answer(good_answer, example_reference)
-print(f"\nScores:")
-print(f"  ROUGE-1: {good_scores['rouge1_f']:.4f}")
-print(f"  ROUGE-2: {good_scores['rouge2_f']:.4f}")
-print(f"  ROUGE-L: {good_scores['rougeL_f']:.4f}")
-print(f"  BLEU: {good_scores['bleu']:.4f}")
+Provide:
+1. Score (0-10)
+2. Reasoning (one sentence)
 
-# Bad answer (low overlap)
-bad_answer = "Try restarting the server and checking the logs for errors."
-print(f"\nGenerated Answer (Bad):\n{bad_answer}")
+Format:
+Score: X
+Reasoning: <explanation>"""
 
-bad_scores = evaluate_answer(bad_answer, example_reference)
-print(f"\nScores:")
-print(f"  ROUGE-1: {bad_scores['rouge1_f']:.4f}")
-print(f"  ROUGE-2: {bad_scores['rouge2_f']:.4f}")
-print(f"  ROUGE-L: {bad_scores['rougeL_f']:.4f}")
-print(f"  BLEU: {bad_scores['bleu']:.4f}")
-
-# ============================================================================
-# PART 4: Semantic Similarity Evaluation
-# ============================================================================
-print("\n" + "="*80)
-print("PART 4: Semantic Similarity Metrics")
-print("="*80)
-
-# Initialize OpenAI client for semantic similarity
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-embedding_model = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
-
-def semantic_similarity(text1, text2):
-    """
-    Compute cosine similarity between two texts using OpenAI embeddings
-    """
-    response = client.embeddings.create(input=[text1, text2], model=embedding_model)
-    emb1 = np.array([response.data[0].embedding])
-    emb2 = np.array([response.data[1].embedding])
-    return cosine_similarity(emb1, emb2)[0][0]
-
-print("\nSemantic Similarity Examples:")
-print("-"*80)
-
-# Good paraphrase
-ref = "Clear all sessions and force re-authentication"
-para = "Force users to log in again and remove active sessions"
-sim = semantic_similarity(ref, para)
-print(f"\nReference: {ref}")
-print(f"Paraphrase: {para}")
-print(f"Similarity: {sim:.4f} ✓ (Good paraphrase)")
-
-# Different meaning
-diff = "Increase database connection pool size"
-sim2 = semantic_similarity(ref, diff)
-print(f"\nDifferent: {diff}")
-print(f"Similarity: {sim2:.4f} ✗ (Different topic)")
-
-# ============================================================================
-# PART 5: Hallucination Detection
-# ============================================================================
-print("\n" + "="*80)
-print("PART 5: Hallucination Detection")
-print("="*80)
-
-def detect_hallucination(answer, source_documents, threshold=0.5):
-    """
-    Check if answer is grounded in source documents
-    """
-    # Combine all source content
-    source_text = " ".join([doc.page_content for doc in source_documents])
-    
-    # Compute semantic similarity
-    similarity = semantic_similarity(answer, source_text)
-    
-    # Check grounding
-    is_grounded = similarity >= threshold
-    
-    return {
-        'is_grounded': is_grounded,
-        'similarity': similarity,
-        'verdict': 'GROUNDED' if is_grounded else 'POSSIBLE HALLUCINATION'
-    }
-
-print("\nHallucination Detection Examples:")
-print("-"*80)
-
-query = "How to fix authentication failures?"
-docs = vector_store.similarity_search(query, k=3)
-
-# Grounded answer
-grounded = "Authentication failures after password reset are caused by stale session tokens. Clear all active sessions to fix this issue."
-result1 = detect_hallucination(grounded, docs)
-print(f"\nAnswer: {grounded}")
-print(f"Verdict: {result1['verdict']} (similarity: {result1['similarity']:.4f})")
-
-# Hallucinated answer
-hallucinated = "You need to upgrade to Python 3.11 and install the latest security patches for Windows 11."
-result2 = detect_hallucination(hallucinated, docs)
-print(f"\nAnswer: {hallucinated}")
-print(f"Verdict: {result2['verdict']} (similarity: {result2['similarity']:.4f})")
-
-# ============================================================================
-# PART 6: Create Evaluation Report
-# ============================================================================
-print("\n" + "="*80)
-print("PART 6: Comprehensive Evaluation Report")
-print("="*80)
-
-def create_evaluation_report(retrieval_metrics, generation_metrics=None):
-    """
-    Generate comprehensive evaluation report
-    """
-    report = {
-        'retrieval': {
-            'precision@1': np.mean([m['precision@1'] for m in retrieval_metrics]),
-            'precision@3': np.mean([m['precision@3'] for m in retrieval_metrics]),
-            'precision@5': np.mean([m['precision@5'] for m in retrieval_metrics]),
-            'recall@3': np.mean([m['recall@3'] for m in retrieval_metrics]),
-            'recall@5': np.mean([m['recall@5'] for m in retrieval_metrics]),
-            'f1@3': np.mean([m['f1@3'] for m in retrieval_metrics]),
-            'mrr': np.mean([m['mrr'] for m in retrieval_metrics]),
-        },
-        'total_queries': len(retrieval_metrics),
-        'perfect_retrievals': sum(1 for m in retrieval_metrics if m['precision@1'] == 1.0)
-    }
-    
-    return report
-
-report = create_evaluation_report(retrieval_results)
-
-print("\n" + "="*80)
-print("EVALUATION REPORT")
-print("="*80)
-print(f"\nDataset: {report['total_queries']} evaluation queries")
-print(f"Perfect top-1 retrievals: {report['perfect_retrievals']}/{report['total_queries']} ({report['perfect_retrievals']/report['total_queries']*100:.1f}%)")
-
-print("\n--- Retrieval Metrics ---")
-for metric, value in report['retrieval'].items():
-    status = "✓" if value >= 0.7 else "⚠" if value >= 0.5 else "✗"
-    print(f"{status} {metric.upper():15} : {value:.4f}")
-
-# ============================================================================
-# PART 7: A/B Testing Framework
-# ============================================================================
-print("\n" + "="*80)
-print("PART 7: A/B Testing Different Configurations")
-print("="*80)
-
-def compare_configurations(queries, config_a, config_b):
-    """
-    Compare two RAG configurations
-    """
-    print(f"\nComparing:")
-    print(f"  Config A: {config_a['name']}")
-    print(f"  Config B: {config_b['name']}")
-    
-    results = {'A': [], 'B': []}
-    
-    # Test Config A
-    for query in queries[:3]:  # Test on subset
-        docs_a = vector_store.similarity_search(
-            query['question'],
-            k=config_a['k']
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            timeout=30
         )
-        retrieved_a = [doc.metadata['ticket_id'] for doc in docs_a]
-        p_a = precision_at_k(retrieved_a, query['relevant_ticket_ids'], 3)
-        results['A'].append(p_a)
         
-        # For demo, Config B just uses different k
-        docs_b = vector_store.similarity_search(
-            query['question'],
-            k=config_b['k']
+        output = response.choices[0].message.content
+        
+        # Parse score
+        try:
+            score_line = [line for line in output.split('\n') if line.startswith('Score:')][0]
+            score = float(score_line.split(':')[1].strip()) / 10.0  # Normalize to 0-1
+        except:
+            score = 0.5  # Default if parsing fails
+        
+        return {
+            'score': score,
+            'verdict': 'GROUNDED' if score >= 0.7 else 'PARTIAL' if score >= 0.4 else 'HALLUCINATED',
+            'explanation': output
+        }
+    except Exception as e:
+        print(f"\n    ⚠ Error evaluating groundedness: {str(e)[:50]}")
+        return {'score': 0.5, 'verdict': 'ERROR', 'explanation': str(e)}
+
+def evaluate_completeness(question, answer, reference_answer=None):
+    """
+    Response Completeness: Does the answer fully address the question?
+    Uses LLM-as-judge to check if all aspects of the question are answered
+    
+    Returns: score 0.0-1.0 (higher = more complete)
+    """
+    if reference_answer:
+        prompt = f"""Evaluate if the ANSWER fully addresses the QUESTION compared to the REFERENCE ANSWER.
+
+QUESTION:
+{question}
+
+REFERENCE ANSWER:
+{reference_answer}
+
+GENERATED ANSWER:
+{answer}
+
+Rate the completeness from 0 to 10:
+- 10: Fully answers all aspects of the question (as good as reference)
+- 7-9: Answers most parts, minor gaps
+- 4-6: Partial answer, missing key information
+- 1-3: Minimal answer, major gaps
+- 0: Does not answer the question
+
+Provide:
+1. Score (0-10)
+2. Reasoning (one sentence)
+
+Format:
+Score: X
+Reasoning: <explanation>"""
+    else:
+        prompt = f"""Evaluate if the ANSWER fully addresses the QUESTION.
+
+QUESTION:
+{question}
+
+ANSWER:
+{answer}
+
+Rate the completeness from 0 to 10:
+- 10: Fully answers all aspects of the question
+- 7-9: Answers most parts, minor gaps
+- 4-6: Partial answer, missing key information
+- 1-3: Minimal answer, major gaps
+- 0: Does not answer the question
+
+Provide:
+1. Score (0-10)
+2. Reasoning (one sentence)
+
+Format:
+Score: X
+Reasoning: <explanation>"""
+
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            timeout=30
         )
-        retrieved_b = [doc.metadata['ticket_id'] for doc in docs_b]
-        p_b = precision_at_k(retrieved_b, query['relevant_ticket_ids'], 3)
-        results['B'].append(p_b)
-    
-    avg_a = np.mean(results['A'])
-    avg_b = np.mean(results['B'])
-    
-    print(f"\nResults:")
-    print(f"  Config A Precision@3: {avg_a:.4f}")
-    print(f"  Config B Precision@3: {avg_b:.4f}")
-    
-    winner = "A" if avg_a > avg_b else "B" if avg_b > avg_a else "Tie"
-    print(f"\n  Winner: Config {winner}")
+        
+        output = response.choices[0].message.content
+        
+        # Parse score
+        try:
+            score_line = [line for line in output.split('\n') if line.startswith('Score:')][0]
+            score = float(score_line.split(':')[1].strip()) / 10.0  # Normalize to 0-1
+        except:
+            score = 0.5  # Default if parsing fails
+        
+        return {
+            'score': score,
+            'verdict': 'COMPLETE' if score >= 0.7 else 'PARTIAL' if score >= 0.4 else 'INCOMPLETE',
+            'explanation': output
+        }
+    except Exception as e:
+        print(f"\n    ⚠ Error evaluating completeness: {str(e)[:50]}")
+        return {'score': 0.5, 'verdict': 'ERROR', 'explanation': str(e)}
 
-config_a = {'name': 'k=3', 'k': 3}
-config_b = {'name': 'k=5', 'k': 5}
+# Evaluate generation for sample queries
+print("\nEvaluating generation quality (sample queries)...")
+print("Note: This uses LLM-as-judge (GPT-4o-mini) to evaluate quality")
+print("This may take 30-60 seconds per query...\n")
 
-compare_configurations(eval_queries, config_a, config_b)
+generation_results = []
+
+for idx, eval_query in enumerate(eval_queries[:2], 1):  # Evaluate first 2 to save time
+    query = eval_query['question']
+    reference = eval_query.get('reference_answer', None)
+    
+    print("-"*80)
+    print(f"\n[{idx}/2] Query: {query}")
+    
+    try:
+        # Generate answer using RAG
+        print("  → Generating answer...")
+        result = generate_answer(query)
+        answer = result['answer']
+        source_docs = result['source_documents']
+        
+        print(f"\nGenerated Answer:\n{answer}")
+        
+        # Evaluate groundedness
+        print("\n  → Evaluating Groundedness...")
+        groundedness = evaluate_groundedness(answer, source_docs)
+        print(f"    Score: {groundedness['score']:.2f} - {groundedness['verdict']}")
+        
+        # Evaluate completeness
+        print("\n  → Evaluating Completeness...")
+        completeness = evaluate_completeness(query, answer, reference)
+        print(f"    Score: {completeness['score']:.2f} - {completeness['verdict']}")
+        
+        generation_results.append({
+            'query_id': eval_query['query_id'],
+            'question': query,
+            'answer': answer,
+            'groundedness_score': groundedness['score'],
+            'completeness_score': completeness['score']
+        })
+    except Exception as e:
+        print(f"\n  ✗ Error processing query: {str(e)[:80]}")
+        continue
+
+print(f"\n✓ Completed generation evaluation for {len(generation_results)} queries")
+
+# Aggregate generation metrics
+print("\n" + "="*80)
+print("GENERATION METRICS (Averaged)")
+print("="*80)
+
+avg_groundedness = np.mean([r['groundedness_score'] for r in generation_results])
+avg_completeness = np.mean([r['completeness_score'] for r in generation_results])
+
+print(f"\nGroundedness:  {avg_groundedness:.4f}")
+print(f"  → Are answers supported by retrieved context?")
+print(f"  → Target: > 0.80 (minimize hallucinations)")
+
+print(f"\nCompleteness:  {avg_completeness:.4f}")
+print(f"  → Do answers fully address the questions?")
+print(f"  → Target: > 0.75 (comprehensive responses)")
+
+# ============================================================================
+# PART 4: Comprehensive Evaluation Report
+# ============================================================================
+print("\n" + "="*80)
+print("PART 4: COMPREHENSIVE EVALUATION REPORT")
+print("="*80)
+
+print(f"""
+┌─────────────────────────────────────────────────────────────┐
+│                    RAG SYSTEM EVALUATION                    │
+├─────────────────────────────────────────────────────────────┤
+│ Dataset: {len(eval_queries)} evaluation queries                           │
+├─────────────────────────────────────────────────────────────┤
+│ RETRIEVAL LAYER                                             │
+│   • Precision@3:  {avg_precision:.4f}  {'✓' if avg_precision >= 0.80 else '⚠' if avg_precision >= 0.70 else '✗'}                              │
+│   • Recall@3:     {avg_recall:.4f}  {'✓' if avg_recall >= 0.70 else '⚠' if avg_recall >= 0.60 else '✗'}                              │
+│   • F1 Score@3:   {avg_f1:.4f}  {'✓' if avg_f1 >= 0.75 else '⚠' if avg_f1 >= 0.65 else '✗'}                              │
+├─────────────────────────────────────────────────────────────┤
+│ GENERATION LAYER                                            │
+│   • Groundedness: {avg_groundedness:.4f}  {'✓' if avg_groundedness >= 0.80 else '⚠' if avg_groundedness >= 0.70 else '✗'}                              │
+│   • Completeness: {avg_completeness:.4f}  {'✓' if avg_completeness >= 0.75 else '⚠' if avg_completeness >= 0.65 else '✗'}                              │
+└─────────────────────────────────────────────────────────────┘
+
+INTERPRETATION:
+""")
+
+# Provide diagnostic feedback
+if avg_precision < 0.70:
+    print("⚠ Low Precision → Too much noise in retrieval")
+    print("  Fix: Improve chunking, use metadata filtering, or increase similarity threshold")
+
+if avg_recall < 0.60:
+    print("⚠ Low Recall → Missing relevant documents")
+    print("  Fix: Increase k, improve embedding model, or use hybrid retrieval")
+
+if avg_f1 < 0.65:
+    print("⚠ Low F1 → Overall retrieval quality needs improvement")
+    print("  Fix: Balance precision and recall by tuning retrieval parameters")
+
+if avg_groundedness < 0.70:
+    print("⚠ Low Groundedness → System is hallucinating")
+    print("  Fix: Strengthen prompt instructions, use stricter grounding, or improve context quality")
+
+if avg_completeness < 0.65:
+    print("⚠ Low Completeness → Answers are incomplete")
+    print("  Fix: Retrieve more context (increase k), improve prompt, or use better LLM")
+
+if all([avg_precision >= 0.80, avg_recall >= 0.70, avg_f1 >= 0.75, 
+        avg_groundedness >= 0.80, avg_completeness >= 0.75]):
+    print("✓ All metrics in target range - System is production-ready!")
+
+# ============================================================================
+# PART 5: Comparing Different RAG Configurations
+# ============================================================================
+print("\n" + "="*80)
+print("PART 5: A/B Testing Framework")
+print("="*80)
+
+print("\nExample: Compare retrieval with k=3 vs k=5")
+
+def compare_configurations(queries, k_values):
+    """Compare different retrieval configurations"""
+    results = {}
+    
+    for k in k_values:
+        print(f"  Testing k={k}...")
+        retrievals = []
+        for query in queries[:3]:  # Test subset
+            try:
+                docs = vector_store.similarity_search(query['question'], k=k)
+                retrieved_ids = [doc.metadata['ticket_id'] for doc in docs]
+                metrics = calculate_retrieval_metrics(retrieved_ids, query['relevant_ticket_ids'], k=k)
+                retrievals.append(metrics)
+            except Exception as e:
+                print(f"\n    ⚠ Error: {str(e)[:50]}")
+                continue
+        
+        if retrievals:
+            results[f'k={k}'] = {
+                'precision': np.mean([r['precision'] for r in retrievals]),
+                'recall': np.mean([r['recall'] for r in retrievals]),
+                'f1': np.mean([r['f1'] for r in retrievals])
+            }
+    
+    return results
+
+comparison = compare_configurations(eval_queries, [3, 5])
+
+print("\nConfiguration Comparison:")
+print(f"{'Config':<10} {'Precision':<12} {'Recall':<12} {'F1':<12}")
+print("-" * 46)
+for config, metrics in comparison.items():
+    print(f"{config:<10} {metrics['precision']:<12.4f} {metrics['recall']:<12.4f} {metrics['f1']:<12.4f}")
 
 print("\n" + "="*80)
 print("DEMO COMPLETE!")
 print("="*80)
-print("\nKey Takeaways:")
-print("1. Retrieval: Measure Precision@K, Recall@K, F1, MRR")
-print("2. Generation: Use ROUGE, BLEU, semantic similarity")
-print("3. Always check for hallucinations")
-print("4. Create evaluation datasets with ground truth")
-print("5. A/B test different configurations systematically")
-print("6. Aim for Precision@3 > 0.8 for production systems")
-print("\n🎉 Congratulations! You've built and evaluated a complete RAG system!")
+
+print("""
+Key Takeaways:
+──────────────
+1. Two-Layer Evaluation is Essential
+   → Separately measure retrieval and generation quality
+   
+2. Retrieval Metrics (Precision, Recall, F1)
+   → Diagnose if you're finding the right documents
+   
+3. Generation Metrics (Groundedness, Completeness)
+   → Ensure faithful and comprehensive answers
+   
+4. Use LLM-as-Judge for Generation Metrics
+   → Automated evaluation using GPT-4/Claude
+   
+5. Always Create Evaluation Datasets
+   → Ground truth enables systematic improvement
+   
+6. A/B Test Different Configurations
+   → Measure impact of changes quantitatively
+
+Production Targets:
+───────────────────
+✓ Precision@3 > 0.80
+✓ Recall@3 > 0.70
+✓ F1@3 > 0.75
+✓ Groundedness > 0.80
+✓ Completeness > 0.75
+""")

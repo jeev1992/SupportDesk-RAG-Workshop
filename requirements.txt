@@ -1,8 +1,13 @@
-# Core RAG Framework
+# Core RAG Frameworks
 langchain==0.1.0
 langchain-openai==0.0.5
 langchain-community==0.0.13
 langchain-experimental
+
+# LlamaIndex (for indexing strategies module)
+llama-index>=0.14.0
+llama-index-embeddings-openai
+llama-index-llms-openai
 
 # Vector Stores
 faiss-cpu>=1.9.0

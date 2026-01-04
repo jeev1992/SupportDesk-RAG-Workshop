@@ -1,359 +1,301 @@
 # Indexing Strategies Exercises
 
-## Exercise 1: Index Performance Comparison (Easy)
+## Exercise 1: Compare Index Query Performance (Easy)
 
-**Task**: Measure build time and query latency for different index types.
+**Task**: Measure query latency for different LlamaIndex index types.
 
 **Steps**:
 ```python
 import time
+from llama_index.core import VectorStoreIndex, SummaryIndex, TreeIndex
 
-def benchmark_index(index_builder, name, embeddings, test_queries):
-    # Build index
-    start = time.time()
-    index = index_builder(embeddings)
-    build_time = time.time() - start
+def benchmark_index(index, name, test_queries):
+    """Benchmark query performance for an index"""
+    query_engine = index.as_query_engine(similarity_top_k=3)
     
-    # Query latency
     query_times = []
-    for query_emb in test_queries:
+    for query in test_queries:
         start = time.time()
-        D, I = index.search(query_emb.reshape(1, -1), 5)
+        response = query_engine.query(query)
         query_times.append((time.time() - start) * 1000)
     
     avg_query_time = sum(query_times) / len(query_times)
     
     print(f"\n{name}:")
-    print(f"  Build time: {build_time:.3f}s")
     print(f"  Avg query time: {avg_query_time:.2f}ms")
+    print(f"  Queries tested: {len(test_queries)}")
 
 # Test different indexes
-def build_flat_l2(embeddings):
-    index = faiss.IndexFlatL2(embedding_dim)
-    index.add(embeddings)
-    return index
+test_queries = [
+    "How to fix authentication issues?",
+    "Database timeout problems",
+    "Mobile app crashes"
+]
 
-def build_hnsw(embeddings):
-    index = faiss.IndexHNSWFlat(embedding_dim, 32)
-    index.add(embeddings)
-    return index
+# Build indexes
+vector_index = VectorStoreIndex.from_documents(documents)
+summary_index = SummaryIndex.from_documents(documents)
+tree_index = TreeIndex.from_documents(documents)
 
 # Run benchmarks
-benchmark_index(build_flat_l2, "IndexFlatL2", embeddings, test_queries)
-benchmark_index(build_hnsw, "IndexHNSWFlat", embeddings, test_queries)
+benchmark_index(vector_index, "Vector Index", test_queries)
+benchmark_index(summary_index, "Summary Index", test_queries)
+benchmark_index(tree_index, "Tree Index", test_queries)
 ```
 
 **Questions**:
-- Which index builds faster?
-- Which index searches faster?
-- What's the trade-off between build and search time?
+- Which index type is fastest for querying?
+- Which provides the most accurate results?
+- What's the trade-off between speed and quality?
 
 ---
 
-## Exercise 2: IVF Parameter Tuning (Medium)
+## Exercise 2: Customize Retrieval Parameters (Medium)
 
-**Task**: Experiment with IVF parameters to understand the accuracy/speed trade-off.
+**Task**: Experiment with different retrieval parameters for each index type.
 
-**Parameters to test**:
+**For Vector Index**:
 ```python
-# Number of clusters
-nlist_values = [5, 10, 20, 50]
+from llama_index.core import VectorStoreIndex
 
-# Number of clusters to search
-nprobe_values = [1, 2, 5, 10]
+vector_index = VectorStoreIndex.from_documents(documents)
 
-for nlist in nlist_values:
-    quantizer = faiss.IndexFlatL2(embedding_dim)
-    index = faiss.IndexIVFFlat(quantizer, embedding_dim, nlist)
-    index.train(embeddings)
-    index.add(embeddings)
-    
-    for nprobe in nprobe_values:
-        index.nprobe = nprobe
-        # Measure accuracy and speed
-        # ...
+# Test different top_k values
+for k in [1, 3, 5, 10]:
+    query_engine = vector_index.as_query_engine(similarity_top_k=k)
+    response = query_engine.query("How to fix login issues?")
+    print(f"\nTop-{k} Results:")
+    print(response)
 ```
 
-**Metrics to measure**:
-1. Recall@5 (compared to exact search)
-2. Query latency
-3. Build time
-
-**Analysis Questions**:
-- How does `nlist` affect build time?
-- How does `nprobe` affect recall?
-- What's the optimal `nlist/nprobe` combination?
-- Rule of thumb: nlist ≈ sqrt(N), nprobe ≈ sqrt(nlist)
-
----
-
-## Exercise 3: Memory Usage Analysis (Medium)
-
-**Task**: Calculate and compare memory usage for different index types.
-
-**Approach**:
+**For Summary Index**:
 ```python
-import sys
+from llama_index.core import SummaryIndex
+from llama_index.core.response_synthesizers import ResponseMode
 
-def estimate_index_memory(index, embeddings):
-    """Estimate memory usage of a FAISS index"""
-    # For IndexFlat: dimension * ntotal * 4 bytes (float32)
-    # For HNSW: ~(dimension * ntotal * 4) * 1.5 to 2.0
-    # For IVFPQ: (m * nbits * ntotal) / 8
-    
-    if isinstance(index, faiss.IndexFlat):
-        return (embeddings.shape[1] * index.ntotal * 4) / (1024**2)  # MB
-    # Add other index types...
+summary_index = SummaryIndex.from_documents(documents)
 
-# Calculate for each index type
-indexes = {
-    'FlatL2': index_flat_l2,
-    'HNSW': index_hnsw,
-    'IVFPQ': index_ivfpq,
-}
+# Test different response modes
+modes = [ResponseMode.REFINE, ResponseMode.COMPACT, ResponseMode.TREE_SUMMARIZE]
 
-for name, idx in indexes.items():
-    memory_mb = estimate_index_memory(idx, embeddings)
-    print(f"{name}: {memory_mb:.2f} MB")
+for mode in modes:
+    query_engine = summary_index.as_query_engine(response_mode=mode)
+    response = query_engine.query("Summarize authentication issues")
+    print(f"\nMode: {mode}")
+    print(response)
 ```
 
-**Challenge**: For a dataset with 1M vectors (384-dim):
-- Calculate memory for IndexFlatL2
-- Calculate memory for IndexIVFPQ (m=8, nbits=8)
-- How much memory do you save with compression?
+**Questions**:
+- How does `similarity_top_k` affect answer quality?
+- Which response mode works best for summaries?
+- What's the latency trade-off?
 
 ---
 
-## Exercise 4: L2 vs Inner Product (Cosine) Similarity (Medium)
+## Exercise 3: Implement Metadata Filtering (Medium)
 
-**Task**: Compare L2 distance and cosine similarity for semantic search.
+**Task**: Filter documents by category before retrieval using LlamaIndex metadata filters.
 
 **Implementation**:
 ```python
-import faiss
+from llama_index.core import VectorStoreIndex
+from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 
-# L2 Distance (Euclidean)
-index_l2 = faiss.IndexFlatL2(embedding_dim)
-index_l2.add(embeddings)
+# Build index with metadata
+vector_index = VectorStoreIndex.from_documents(documents)
 
-# Inner Product (Cosine similarity with normalized vectors)
-embeddings_norm = embeddings.copy()
-faiss.normalize_L2(embeddings_norm)
-index_ip = faiss.IndexFlatIP(embedding_dim)
-index_ip.add(embeddings_norm)
+# Create query engine with metadata filter
+def filtered_query(query, category=None, priority=None):
+    filters = []
+    
+    if category:
+        filters.append(ExactMatchFilter(key="category", value=category))
+    
+    if priority:
+        filters.append(ExactMatchFilter(key="priority", value=priority))
+    
+    if filters:
+        query_engine = vector_index.as_query_engine(
+            similarity_top_k=3,
+            filters=MetadataFilters(filters=filters)
+        )
+    else:
+        query_engine = vector_index.as_query_engine(similarity_top_k=3)
+    
+    return query_engine.query(query)
 
-# Search with both
-query = "password reset issue"
-query_emb = model.encode([query]).astype('float32')
-query_norm = query_emb.copy()
-faiss.normalize_L2(query_norm)
+# Test filtered queries
+print("All authentication issues:")
+response = filtered_query("login failed", category="Authentication")
+print(response)
 
-D_l2, I_l2 = index_l2.search(query_emb, 5)
-D_ip, I_ip = index_ip.search(query_norm, 5)
+print("\nCritical priority only:")
+response = filtered_query("system down", priority="Critical")
+print(response)
+```
 
-print("L2 Results:", I_l2[0])
-print("IP Results:", I_ip[0])
+**Test cases**:
+- Filter by category only
+- Filter by priority only  
+- Combine multiple filters
+- Compare with unfiltered results
+
+**Questions**:
+- How does filtering affect relevance?
+- Does it reduce irrelevant results?
+- What happens when filters are too restrictive?
+
+---
+
+## Exercise 4: Build a Custom Hybrid Retriever (Medium)
+
+**Task**: Implement your own hybrid retrieval combining vector and keyword search.
+
+**Implementation**:
+```python
+from llama_index.core import VectorStoreIndex, KeywordTableIndex
+import numpy as np
+
+class CustomHybridRetriever:
+    def __init__(self, documents):
+        # Build both indexes
+        self.vector_index = VectorStoreIndex.from_documents(documents)
+        self.keyword_index = KeywordTableIndex.from_documents(documents)
+        
+    def retrieve(self, query, top_k=5, vector_weight=0.7):
+        """
+        Hybrid retrieval with custom weighting
+        
+        Args:
+            query: Search query
+            top_k: Number of results
+            vector_weight: Weight for vector search (0-1)
+        """
+        keyword_weight = 1 - vector_weight
+        
+        # Get retrievers
+        vector_retriever = self.vector_index.as_retriever(similarity_top_k=top_k*2)
+        keyword_retriever = self.keyword_index.as_retriever(similarity_top_k=top_k*2)
+        
+        # Retrieve from both
+        vector_nodes = vector_retriever.retrieve(query)
+        keyword_nodes = keyword_retriever.retrieve(query)
+        
+        # Combine scores using RRF (Reciprocal Rank Fusion)
+        doc_scores = {}
+        
+        for rank, node in enumerate(vector_nodes, 1):
+            doc_id = node.node.metadata.get('ticket_id', node.node_id)
+            doc_scores[doc_id] = doc_scores.get(doc_id, 0) + (vector_weight / rank)
+        
+        for rank, node in enumerate(keyword_nodes, 1):
+            doc_id = node.node.metadata.get('ticket_id', node.node_id)
+            doc_scores[doc_id] = doc_scores.get(doc_id, 0) + (keyword_weight / rank)
+        
+        # Sort by combined score
+        sorted_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        return sorted_docs[:top_k]
+
+# Test hybrid retriever
+hybrid = CustomHybridRetriever(documents)
+
+# Test with different weights
+for weight in [0.3, 0.5, 0.7, 1.0]:
+    print(f"\nVector weight: {weight}")
+    results = hybrid.retrieve("authentication failure", vector_weight=weight)
+    print(f"Top 3: {[doc_id for doc_id, score in results[:3]]}")
 ```
 
 **Questions**:
-- Do the results differ significantly?
-- Which is better for semantic similarity?
-- Why do we normalize for inner product?
-- Hint: cos(θ) = (A·B) / (||A|| ||B||)
+- How do different weights affect results?
+- When should you favor vector vs keyword?
+- Can you improve the RRF formula?---
 
----
+## Exercise 5: Index Persistence and Loading (Easy)
 
-## Exercise 5: Building a Production-Ready Index (Hard)
-
-**Task**: Implement a class that automatically selects the best index type based on dataset size.
-
-**Requirements**:
-```python
-class AdaptiveVectorIndex:
-    def __init__(self, embedding_dim, metric='l2'):
-        """
-        Auto-select index type based on dataset size
-        
-        Args:
-            embedding_dim: Dimension of embeddings
-            metric: 'l2' or 'cosine'
-        """
-        self.embedding_dim = embedding_dim
-        self.metric = metric
-        self.index = None
-        self.index_type = None
-    
-    def build(self, embeddings):
-        """Build optimal index based on data size"""
-        n_vectors = len(embeddings)
-        
-        if n_vectors < 10000:
-            # Use exact search
-            self.index_type = "Flat"
-            self.index = self._build_flat(embeddings)
-        elif n_vectors < 100000:
-            # Use HNSW
-            self.index_type = "HNSW"
-            self.index = self._build_hnsw(embeddings)
-        else:
-            # Use IVF
-            self.index_type = "IVF"
-            self.index = self._build_ivf(embeddings)
-        
-        print(f"Built {self.index_type} index for {n_vectors} vectors")
-    
-    def _build_flat(self, embeddings):
-        # TODO: Implement
-        pass
-    
-    def _build_hnsw(self, embeddings):
-        # TODO: Implement with optimal M parameter
-        pass
-    
-    def _build_ivf(self, embeddings):
-        # TODO: Implement with optimal nlist
-        pass
-    
-    def search(self, query, k=5):
-        """Search the index"""
-        # TODO: Implement
-        pass
-    
-    def save(self, path):
-        """Save index to disk"""
-        faiss.write_index(self.index, path)
-    
-    def load(self, path):
-        """Load index from disk"""
-        self.index = faiss.read_index(path)
-```
-
-**Test it**:
-```python
-# Small dataset
-adaptive_idx = AdaptiveVectorIndex(384)
-adaptive_idx.build(embeddings[:100])  # Should use Flat
-
-# Medium dataset
-adaptive_idx.build(embeddings[:50000])  # Should use HNSW
-
-# Large dataset
-adaptive_idx.build(embeddings[:500000])  # Should use IVF
-```
-
----
-
-## Exercise 6: Index Persistence and Loading (Easy)
-
-**Task**: Practice saving and loading FAISS indexes.
+**Task**: Practice saving and loading LlamaIndex indexes.
 
 **Steps**:
 ```python
-import faiss
+from llama_index.core import VectorStoreIndex, StorageContext, load_index_from_storage
 
 # Build an index
-index = faiss.IndexHNSWFlat(embedding_dim, 32)
-index.add(embeddings)
+vector_index = VectorStoreIndex.from_documents(documents)
 
 # Save to disk
-faiss.write_index(index, "./my_index.faiss")
-print("Index saved!")
+vector_index.storage_context.persist(persist_dir="./storage")
+print("✓ Index saved to ./storage")
 
 # Load from disk
-loaded_index = faiss.read_index("./my_index.faiss")
-print(f"Loaded index with {loaded_index.ntotal} vectors")
+storage_context = StorageContext.from_defaults(persist_dir="./storage")
+loaded_index = load_index_from_storage(storage_context)
+print("✓ Index loaded from disk")
 
 # Verify it works
-D, I = loaded_index.search(query_embedding, 3)
-print("Search results:", I[0])
+query_engine = loaded_index.as_query_engine()
+response = query_engine.query("How to fix authentication issues?")
+print(f"\nQuery result: {response}")
 ```
 
 **Why this matters**: 
 - Building indexes is expensive
 - Production systems should load pre-built indexes
 - Much faster startup time
+- Saves API costs (no re-embedding)
+
+**Challenge**: Modify the demo to always check if an index exists before building a new one.
 
 ---
 
-## Exercise 7: Hybrid Index Strategy (Advanced)
+## Exercise 6: Compare Index Types for Different Queries (Medium)
 
-**Task**: Combine exact and approximate search for best of both worlds.
+**Task**: Test which index type works best for different query patterns.
 
-**Concept**: Use approximate search to quickly find candidates, then re-rank with exact search.
-
-**Implementation**:
+**Query Types**:
 ```python
-def hybrid_search(query_emb, index_approx, index_exact, k=5, candidate_multiplier=3):
-    """
-    Two-stage search: fast approximate + exact reranking
-    
-    Args:
-        query_emb: Query embedding
-        index_approx: Fast approximate index (HNSW/IVF)
-        index_exact: Exact index (Flat)
-        k: Final number of results
-        candidate_multiplier: How many candidates to retrieve
-    
-    Returns:
-        Top-k results with exact scores
-    """
-    # Stage 1: Get candidates from approximate index
-    k_candidates = k * candidate_multiplier
-    D_approx, I_approx = index_approx.search(query_emb, k_candidates)
-    
-    # Stage 2: Re-rank candidates with exact search
-    # Extract candidate vectors from exact index
-    # Compute exact distances
-    # Return top-k
-    
-    # TODO: Implement reranking
-    pass
+query_types = {
+    'specific': [
+        "What is ticket TICK-001 about?",
+        "Show me TICK-015 details"
+    ],
+    'semantic': [
+        "How to fix login problems?",
+        "Database connection issues"
+    ],
+    'summary': [
+        "What are the most common authentication problems?",
+        "Summarize all database issues"
+    ]
+}
 
-# Test it
-index_approx = faiss.IndexHNSWFlat(embedding_dim, 32)
-index_approx.add(embeddings)
+# Test all indexes
+indexes = {
+    'vector': VectorStoreIndex.from_documents(documents),
+    'summary': SummaryIndex.from_documents(documents),
+    'tree': TreeIndex.from_documents(documents),
+    'keyword': KeywordTableIndex.from_documents(documents)
+}
 
-index_exact = faiss.IndexFlatL2(embedding_dim)
-index_exact.add(embeddings)
-
-results = hybrid_search(query_embedding, index_approx, index_exact, k=5)
+# Compare results
+for query_type, queries in query_types.items():
+    print(f"\n{'='*60}")
+    print(f"Query Type: {query_type.upper()}")
+    print('='*60)
+    
+    for query in queries:
+        print(f"\nQuery: {query}")
+        for name, index in indexes.items():
+            engine = index.as_query_engine(similarity_top_k=3)
+            response = engine.query(query)
+            print(f"  {name}: {str(response)[:100]}...")
 ```
 
-**Benefits**:
-- Faster than pure exact search
-- More accurate than pure approximate search
-- Good balance for production systems
-
----
-
-## Bonus: GPU Acceleration (Advanced)
-
-**Task**: Use GPU for faster indexing and search (if available).
-
-```python
-import faiss
-
-# Check if GPU is available
-if faiss.get_num_gpus() > 0:
-    print(f"Found {faiss.get_num_gpus()} GPU(s)")
-    
-    # Create GPU resources
-    res = faiss.StandardGpuResources()
-    
-    # CPU index
-    cpu_index = faiss.IndexFlatL2(embedding_dim)
-    
-    # Move to GPU
-    gpu_index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-    gpu_index.add(embeddings)
-    
-    # Search on GPU (much faster!)
-    D, I = gpu_index.search(query_embedding, 5)
-else:
-    print("No GPU available")
-```
-
-**Performance gain**: 10-100x faster for large datasets!
+**Analysis**:
+- Which index type is best for specific ticket lookups?
+- Which works best for semantic similarity?
+- Which is best for high-level summaries?
+- Can you create decision rules for index selection?
 
 ---
 
@@ -361,11 +303,17 @@ else:
 
 Solutions provided after the workshop. Try to implement these yourself first!
 
+These exercises will help you understand:
+- When to use each index type
+- How to optimize retrieval parameters
+- Building hybrid retrieval systems
+- Persisting and loading indexes efficiently
+
 ---
 
 ## Next Steps
 
-Ready for **RAG Pipeline**? We'll combine embeddings, chunking, and indexing into a complete question-answering system!
+Ready for **Module 4: RAG Pipeline**? We'll combine indexing with LLM generation to build a complete question-answering system!
 
 ---
 

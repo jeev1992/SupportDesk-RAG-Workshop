@@ -196,23 +196,26 @@ print(scores)
 
 ## Exercise 5: Benchmark Different Embedding Models (Medium)
 
-**Task**: Compare retrieval performance across embedding models.
+**Task**: Compare retrieval performance across different OpenAI embedding models.
 
 **Models to test**:
 ```python
 models = [
-    'all-MiniLM-L6-v2',        # 384 dim, fast
-    'all-mpnet-base-v2',       # 768 dim, accurate
-    'multi-qa-MiniLM-L6-cos-v1',  # Optimized for QA
-    'paraphrase-multilingual-MiniLM-L12-v2'  # Multilingual
+    'text-embedding-3-small',   # 1536 dim, fastest, most cost-effective
+    'text-embedding-3-large',   # 3072 dim, highest quality
+    'text-embedding-ada-002',   # 1536 dim, legacy model
 ]
 ```
 
 **Implementation**:
 ```python
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
+import numpy as np
+
 def benchmark_embeddings(models, eval_queries, documents):
     """
-    Compare retrieval performance across models
+    Compare retrieval performance across OpenAI models
     """
     results = {}
     
@@ -220,11 +223,11 @@ def benchmark_embeddings(models, eval_queries, documents):
         print(f"\nTesting {model_name}...")
         
         # Build vector store with this model
-        embeddings = HuggingFaceEmbeddings(model_name=model_name)
+        embeddings = OpenAIEmbeddings(model=model_name)
         store = Chroma.from_documents(
             documents=documents,
             embedding=embeddings,
-            collection_name=model_name.replace('/', '_')
+            collection_name=model_name.replace('-', '_')
         )
         
         # Evaluate
@@ -235,22 +238,54 @@ def benchmark_embeddings(models, eval_queries, documents):
             p3 = precision_at_k(retrieved, query['relevant_ticket_ids'], 3)
             metrics.append(p3)
         
-        results[model_name] = np.mean(metrics)
+        results[model_name] = {
+            'avg_precision': np.mean(metrics),
+            'cost_multiplier': 1.0 if 'small' in model_name else (2.0 if 'large' in model_name else 1.0)
+        }
     
     return results
+
+# Run benchmark
+results = benchmark_embeddings(models, eval_queries, chunks)
+
+# Display results
+for model, metrics in results.items():
+    print(f"\n{model}:")
+    print(f"  Avg Precision@3: {metrics['avg_precision']:.3f}")
+    print(f"  Relative Cost: {metrics['cost_multiplier']}x")
 ```
 
 **Visualize**:
 ```python
 import matplotlib.pyplot as plt
 
-plt.figure(figsize=(10, 6))
-plt.barh(list(results.keys()), list(results.values()))
-plt.xlabel('Average Precision@3')
-plt.title('Embedding Model Comparison')
+models_list = list(results.keys())
+precisions = [results[m]['avg_precision'] for m in models_list]
+costs = [results[m]['cost_multiplier'] for m in models_list]
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+# Precision comparison
+ax1.barh(models_list, precisions, color='#1f77b4')
+ax1.set_xlabel('Average Precision@3')
+ax1.set_title('Retrieval Quality')
+
+# Cost vs Quality
+ax2.scatter(costs, precisions, s=200)
+for i, model in enumerate(models_list):
+    ax2.annotate(model.split('-')[-1], (costs[i], precisions[i]))
+ax2.set_xlabel('Relative Cost')
+ax2.set_ylabel('Precision@3')
+ax2.set_title('Cost vs Quality Trade-off')
+
 plt.tight_layout()
 plt.show()
 ```
+
+**Questions**:
+- Is text-embedding-3-large worth the extra cost?
+- How much does model choice affect retrieval?
+- Which model provides the best cost/performance balance?
 
 ---
 

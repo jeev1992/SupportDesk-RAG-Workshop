@@ -2,9 +2,9 @@
   {
     "query_id": "Q1",
     "question": "How do I fix authentication failures after password reset?",
-    "relevant_ticket_ids": ["TICK-001"],
+    "relevant_ticket_ids": ["TICK-001", "TICK-011", "TICK-014"],
     "category": "Authentication",
-    "reference_answer": "Clear all active sessions and force re-authentication. Implement automatic session cleanup on password change to prevent stale session tokens from causing authentication failures."
+    "reference_answer": "Clear all active sessions and force re-authentication after password change. Ensure SAML signature algorithms match between your app and IdP (SHA-256 recommended). Extend session timeout to 2 hours with activity-based renewal to prevent premature logouts. Implement automatic session cleanup on password change."
   },
   {
     "query_id": "Q2",
@@ -30,9 +30,9 @@
   {
     "query_id": "Q5",
     "question": "Memory leak in background worker process",
-    "relevant_ticket_ids": ["TICK-005"],
+    "relevant_ticket_ids": ["TICK-005", "TICK-010"],
     "category": "Performance",
-    "reference_answer": "Unclosed database cursors in batch processing loop cause memory leaks. Add explicit cursor.close() calls and implement context managers for all database operations."
+    "reference_answer": "Add explicit cursor.close() calls and implement context managers for all database operations to prevent memory leaks. Optimize N+1 queries using JOIN statements, add database indexes on frequently queried columns, and implement Redis caching for aggregate statistics to improve performance."
   },
   {
     "query_id": "Q6",
@@ -58,9 +58,9 @@
   {
     "query_id": "Q9",
     "question": "How to fix users hitting API rate limits?",
-    "relevant_ticket_ids": ["TICK-009"],
+    "relevant_ticket_ids": ["TICK-009", "TICK-018"],
     "category": "API",
-    "reference_answer": "Increase rate limit for authenticated users, implement tiered rate limiting based on account type, and add X-RateLimit headers to API responses."
+    "reference_answer": "Increase rate limit for authenticated users and implement tiered rate limiting based on account type. Add X-RateLimit headers to API responses. Migrate to centralized Redis cache shared across all servers to ensure consistent data and implement cache invalidation via pub/sub."
   },
   {
     "query_id": "Q10",
@@ -72,9 +72,9 @@
   {
     "query_id": "Q11",
     "question": "SSO login broken after system upgrade",
-    "relevant_ticket_ids": ["TICK-011"],
+    "relevant_ticket_ids": ["TICK-011", "TICK-001", "TICK-016"],
     "category": "Authentication",
-    "reference_answer": "Upgrade changed default SAML signature algorithm from SHA-1 to SHA-256. Update IdP configuration to match and add configuration option to specify signature algorithm."
+    "reference_answer": "Update SAML signature algorithm from SHA-1 to SHA-256 and coordinate with IT to update IdP configuration. Add configuration option to specify signature algorithm. Clear all active sessions on password changes. Configure NTP synchronization for TOTP time-sensitive codes and increase acceptance window to ±1 time step."
   },
   {
     "query_id": "Q12",
@@ -93,9 +93,9 @@
   {
     "query_id": "Q14",
     "question": "Users getting logged out too frequently",
-    "relevant_ticket_ids": ["TICK-014"],
+    "relevant_ticket_ids": ["TICK-014", "TICK-001"],
     "category": "Authentication",
-    "reference_answer": "Extend session timeout to 2 hours for active users, implement activity-based session renewal, add auto-save for forms with localStorage backup, and implement session expiry warning."
+    "reference_answer": "Extend session timeout to 2 hours for active users with activity-based session renewal. Add auto-save for forms with localStorage backup and implement session expiry warning. Clear all active sessions and force re-authentication on password changes to prevent stale tokens."
   },
   {
     "query_id": "Q15",

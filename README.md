@@ -8,9 +8,9 @@ This comprehensive workshop teaches you to build a production-ready Retrieval-Au
 ### Learning Objectives
 - ✅ Generate and work with OpenAI embeddings
 - ✅ Master chunking strategies for optimal retrieval  
-- ✅ Build efficient vector indexes with FAISS
+- ✅ Compare 5 different indexing strategies (LlamaIndex)
 - ✅ Implement a complete RAG pipeline with LangChain
-- ✅ Evaluate and improve system performance
+- ✅ Evaluate with two-layer metrics (retrieval + generation)
 - ✅ Deploy anti-hallucination safeguards
 
 ---
@@ -69,11 +69,15 @@ python demo.py
 
 ---
 
-### Module 3: Indexing (`modules/3_indexing/`)
+### Module 3: Indexing Strategies (`modules/3_indexing/`)
 **Learn:**
-- FAISS index types (Flat, IVF, HNSW, PQ)
-- Exact vs approximate search trade-offs
-- Performance benchmarking and optimization
+- Vector Index - Semantic similarity search (most common)
+- Summary Index - High-level document summaries
+- Tree Index - Hierarchical retrieval patterns
+- Keyword Table Index - Traditional keyword matching
+- Hybrid Retrieval - Combining multiple strategies
+
+**Technologies:** LlamaIndex for clean indexing abstractions
 
 **Run:**
 ```bash
@@ -212,6 +216,7 @@ pip install --upgrade -r requirements.txt
 ## 📚 Additional Resources
 
 - [LangChain Documentation](https://python.langchain.com/)
+- [LlamaIndex Documentation](https://docs.llamaindex.ai/)
 - [FAISS Documentation](https://github.com/facebookresearch/faiss)
 - [OpenAI API Reference](https://platform.openai.com/docs)
 - [Chroma Documentation](https://docs.trychroma.com/)

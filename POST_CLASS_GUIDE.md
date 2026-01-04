@@ -5,9 +5,9 @@ Congratulations on completing the SupportDesk-RAG workshop! 🎉
 ## 🎯 What You've Learned
 
 - ✅ Built semantic search with embeddings
-- ✅ Implemented vector stores (FAISS & Chroma)
+- ✅ Compared 5 indexing strategies (Vector, Summary, Tree, Keyword, Hybrid)
 - ✅ Created end-to-end RAG pipelines
-- ✅ Evaluated retrieval and generation quality
+- ✅ Evaluated with two-layer metrics: Retrieval (P/R/F1) + Generation (Groundedness/Completeness)
 - ✅ Prevented hallucinations with grounding techniques
 
 ---
@@ -31,11 +31,12 @@ Congratulations on completing the SupportDesk-RAG workshop! 🎉
 
 ### 2. Experiment with Advanced Techniques
 
-**Chunking:**
-- Recursive character splitting
-- Semantic chunking using embeddings
-- Parent-child document retrieval
-- Sentence window retrieval
+**Indexing Strategies:**
+- Vector Index for semantic search (covered in workshop)
+- Summary Index for high-level queries (covered in workshop)
+- Tree Index for hierarchical retrieval (covered in workshop)
+- Keyword Table Index for exact matching (covered in workshop)
+- Hybrid approaches combining multiple strategies (covered in workshop)
 
 **Embeddings:**
 - Experiment with different OpenAI models (text-embedding-3-small vs large)
