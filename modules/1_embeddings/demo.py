@@ -117,23 +117,31 @@ for rank, idx in enumerate(top_indices, 1):
     print(f"Description: {ticket['description'][:150]}...")
 
 # ============================================================================
-# PART 4: Visualize Embeddings in 2D
+# PART 4: Visualize Embeddings in Semantic Space
 # ============================================================================
 print("\n" + "="*80)
-print("PART 4: Visualizing Embeddings")
+print("PART 4: Visualizing Embeddings in Semantic Space")
 print("="*80)
 
-print(f"\nReducing {embedding_dim} dimensions to 2D using PCA...")
+print(f"\nTo visualize {embedding_dim}-dimensional embeddings, we need to project them into 2D...")
+print("Think of it like taking a photo of a 3D object - we lose some detail but can see relationships.")
+
+# Use PCA to reduce dimensions (behind the scenes - students don't need to worry about this)
 pca = PCA(n_components=2)
 embeddings_2d = pca.fit_transform(embeddings)
 query_2d = pca.transform(query_embedding)
 
-print("Creating visualization...")
+print("✓ Embeddings projected to 2D for visualization")
+print("\nWhat you'll see:")
+print("  • Each dot = one support ticket")
+print("  • Closer dots = more semantically similar tickets")
+print("  • Red star = your search query")
+print("  • Red circles = top-5 matches")
 
 # Create the plot
 plt.figure(figsize=(12, 8))
 
-# Plot all tickets
+# Plot all tickets by category
 categories = list(set(ticket['category'] for ticket in tickets))
 colors = plt.cm.tab10(np.linspace(0, 1, len(categories)))
 category_to_color = dict(zip(categories, colors))
@@ -143,12 +151,12 @@ for i, ticket in enumerate(tickets):
     plt.scatter(embeddings_2d[i, 0], embeddings_2d[i, 1], 
                c=[color], label=ticket['category'], s=100, alpha=0.6)
 
-# Highlight top-5 matches
+# Highlight top-5 matches with red circles
 for idx in top_indices:
     plt.scatter(embeddings_2d[idx, 0], embeddings_2d[idx, 1], 
                s=300, facecolors='none', edgecolors='red', linewidths=2)
 
-# Plot query
+# Plot query as red star
 plt.scatter(query_2d[0, 0], query_2d[0, 1], 
            c='red', marker='*', s=500, label='Query', edgecolors='black', linewidths=2)
 
@@ -157,15 +165,16 @@ handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
 plt.legend(by_label.values(), by_label.keys(), loc='best')
 
-plt.title('Ticket Embeddings Visualization (PCA 2D Projection)', fontsize=14, fontweight='bold')
-plt.xlabel('Principal Component 1')
-plt.ylabel('Principal Component 2')
+plt.title('Embeddings in Semantic Space: Similar Meanings Cluster Together', 
+         fontsize=14, fontweight='bold')
+plt.xlabel('Semantic Dimension 1')
+plt.ylabel('Semantic Dimension 2')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 
 # Save the plot
 plt.savefig('embeddings_visualization.png', dpi=150)
-print("✓ Visualization saved as 'embeddings_visualization.png'")
+print("\n✓ Visualization saved as 'embeddings_visualization.png'")
 plt.show()
 
 # ============================================================================

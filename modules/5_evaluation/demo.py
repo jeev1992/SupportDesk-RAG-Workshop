@@ -37,12 +37,12 @@ print("PART 1: Setup RAG System for Evaluation")
 print("="*80)
 
 # Load tickets
-with open('data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
     tickets = json.load(f)
 print(f"✓ Loaded {len(tickets)} support tickets")
 
 # Load evaluation queries with ground truth
-with open('modules/5_evaluation/evaluation_queries.json', 'r', encoding='utf-8') as f:
+with open('evaluation_queries.json', 'r', encoding='utf-8') as f:
     eval_queries = json.load(f)
 print(f"✓ Loaded {len(eval_queries)} evaluation queries with ground truth")
 

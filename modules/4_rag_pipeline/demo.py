@@ -14,10 +14,11 @@ import json
 import os
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import Chroma
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -35,7 +36,7 @@ print("PART 1: Data Ingestion Pipeline")
 print("="*80)
 
 # Load tickets
-with open('../data/synthetic_tickets.json', 'r') as f:
+with open('../../data/synthetic_tickets.json', 'r') as f:
     tickets = json.load(f)
 print(f"✓ Loaded {len(tickets)} support tickets")
 
@@ -108,7 +109,7 @@ print(f"  - Top-K results: 3")
 # Test retriever
 test_query = "Users can't log in after changing passwords"
 print(f"\nTest query: '{test_query}'")
-retrieved_docs = retriever.get_relevant_documents(test_query)
+retrieved_docs = retriever.invoke(test_query)
 
 print(f"\nRetrieved {len(retrieved_docs)} documents:")
 for i, doc in enumerate(retrieved_docs, 1):
@@ -139,10 +140,7 @@ Question: {question}
 
 Helpful Answer (with ticket citations):"""
 
-PROMPT = PromptTemplate(
-    template=prompt_template,
-    input_variables=["context", "question"]
-)
+PROMPT = ChatPromptTemplate.from_template(prompt_template)
 
 print("✓ Prompt template created with anti-hallucination rules:")
 print("\n" + "-"*80)
@@ -178,17 +176,21 @@ print("\n" + "="*80)
 print("PART 5: Assembling RAG Chain")
 print("="*80)
 
+def format_docs(docs):
+    return "\n\n---\n\n".join([doc.page_content for doc in docs])
+
 if llm:
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",  # Stuff all retrieved docs into prompt
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": PROMPT}
+    # Build RAG chain using LCEL
+    qa_chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | PROMPT
+        | llm
+        | StrOutputParser()
     )
     print("✓ RAG chain assembled:")
     print("  Retriever → Context Injection → LLM → Answer")
 else:
+    qa_chain = None
     print("⚠ LLM not available, showing architecture only")
 
 # ============================================================================
@@ -211,25 +213,25 @@ for query in test_queries:
     print("="*80)
     
     # Show retrieved context
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
     print(f"\nRetrieved {len(docs)} relevant tickets:")
     for i, doc in enumerate(docs, 1):
         print(f"\n  [{i}] {doc.metadata['ticket_id']}: {doc.metadata['title']}")
     
-    if llm:
+    if qa_chain:
         # Generate answer
         print("\nGenerating answer...")
-        result = qa_chain({"query": query})
+        result = qa_chain.invoke(query)
         
         print("\n" + "-"*80)
         print("ANSWER:")
         print("-"*80)
-        print(result['result'])
+        print(result)
         
         print("\n" + "-"*80)
         print("SOURCE DOCUMENTS:")
         print("-"*80)
-        for i, doc in enumerate(result['source_documents'], 1):
+        for i, doc in enumerate(docs, 1):
             print(f"{i}. {doc.metadata['source']}")
     else:
         print("\n(LLM not configured - would generate answer here)")
@@ -296,7 +298,7 @@ print("\n" + "="*80)
 print("PART 8: Interactive SupportDesk Assistant")
 print("="*80)
 
-if llm:
+if qa_chain:
     print("\nSupportDesk RAG Assistant Ready!")
     print("Ask questions about support ticket history.")
     print("Type 'quit' to exit.\n")
@@ -312,10 +314,11 @@ if llm:
             continue
         
         print("\nAssistant: ", end="")
-        result = qa_chain({"query": user_query})
-        print(result['result'])
+        answer = qa_chain.invoke(user_query)
+        print(answer)
         
-        print(f"\n📎 Sources: {', '.join([doc.metadata['ticket_id'] for doc in result['source_documents']])}")
+        docs = retriever.invoke(user_query)
+        print(f"\n📎 Sources: {', '.join([doc.metadata['ticket_id'] for doc in docs])}")
         print()
 else:
     print("\n⚠ Interactive mode requires OpenAI API key")

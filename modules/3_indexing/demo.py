@@ -48,7 +48,7 @@ print("\n" + "="*80)
 print("Loading Support Tickets")
 print("="*80)
 
-with open('data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
     tickets = json.load(f)
 
 # Convert to LlamaIndex Documents
