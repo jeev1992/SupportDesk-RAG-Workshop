@@ -220,11 +220,27 @@ normalized_embeddings = normalize(embeddings)
 
 ### Visualization Tips
 ```python
-# Add annotations to your 2D plot
-for i, ticket in enumerate(tickets):
-    plt.annotate(ticket['ticket_id'], 
-                (embeddings_2d[i, 0], embeddings_2d[i, 1]),
-                fontsize=8, alpha=0.7)
+# Create a similarity comparison chart for multiple queries
+import matplotlib.pyplot as plt
+
+queries = ["auth issue", "database timeout", "email problem"]
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+for idx, query in enumerate(queries):
+    # Get query embedding and similarities
+    query_emb = client.embeddings.create(input=[query], model=model).data[0].embedding
+    sims = cosine_similarity([query_emb], embeddings)[0]
+    top_5_indices = np.argsort(sims)[::-1][:5]
+    
+    # Plot bar chart
+    axes[idx].barh(range(5), [sims[i] for i in top_5_indices])
+    axes[idx].set_title(f'Query: "{query}"')
+    axes[idx].set_xlabel('Similarity Score')
+    axes[idx].set_yticks(range(5))
+    axes[idx].set_yticklabels([tickets[i]['ticket_id'] for i in top_5_indices])
+    
+plt.tight_layout()
+plt.show()
 ```
 
 ---

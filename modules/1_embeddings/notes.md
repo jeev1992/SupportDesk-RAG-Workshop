@@ -162,39 +162,79 @@ def get_or_create_embedding(text, cache={}):
 
 ## Visualizing Embeddings
 
-### Dimensionality Reduction
+### The Challenge
 
-High-dimensional embeddings (1536D) can't be visualized directly. Use dimensionality reduction:
+Embeddings live in high-dimensional space (1536 dimensions for text-embedding-3-small). We can't visualize 1536D space directly, so we have two options:
+
+### Option 1: Similarity Matrices (Recommended)
+
+**Why this is better**: Shows TRUE relationships without information loss.
+
+```python
+import matplotlib.pyplot as plt
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Compute pairwise similarities
+similarity_matrix = cosine_similarity(embeddings)
+
+# Create heatmap
+plt.figure(figsize=(10, 8))
+plt.imshow(similarity_matrix, cmap='RdYlGn', vmin=0, vmax=1)
+plt.colorbar(label='Cosine Similarity')
+plt.title('Document Similarity Matrix')
+plt.xlabel('Document Index')
+plt.ylabel('Document Index')
+plt.show()
+```
+
+**Benefits:**
+- ✅ No information loss
+- ✅ Shows exact similarity values
+- ✅ Easy to interpret
+- ✅ Reveals clusters and patterns
+
+### Option 2: Dimensionality Reduction (Use with Caution)
+
+⚠️ **Warning**: These methods lose ~99% of information. Good for quick intuition, bad for precise analysis.
 
 **t-SNE (t-Distributed Stochastic Neighbor Embedding)**
 ```python
 from sklearn.manifold import TSNE
 
 # Reduce 1536D → 2D
-tsne = TSNE(n_components=2, random_state=42)
+tsne = TSNE(n_components=2, random_state=42, perplexity=30)
 embeddings_2d = tsne.fit_transform(embeddings)
 
 # Plot
 plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1])
+plt.title('t-SNE Projection (Approximate)')
 ```
+- Pros: Preserves local structure well
+- Cons: Slow, non-deterministic, loses global structure
 
 **UMAP (Uniform Manifold Approximation and Projection)**
 ```python
 import umap
 
 # Faster and often better than t-SNE
-reducer = umap.UMAP(n_components=2)
+reducer = umap.UMAP(n_components=2, random_state=42)
 embeddings_2d = reducer.fit_transform(embeddings)
 ```
+- Pros: Faster than t-SNE, preserves global structure better
+- Cons: Still lossy, requires tuning
 
 **PCA (Principal Component Analysis)**
 ```python
 from sklearn.decomposition import PCA
 
-# Linear reduction (faster but less accurate)
+# Linear reduction (fastest but least accurate)
 pca = PCA(n_components=2)
 embeddings_2d = pca.fit_transform(embeddings)
 ```
+- Pros: Fast, deterministic
+- Cons: Linear projection, loses most structure
+
+**Key takeaway**: Use similarity matrices for analysis, use 2D projections only for rough intuition.
 
 ## Common Pitfalls
 

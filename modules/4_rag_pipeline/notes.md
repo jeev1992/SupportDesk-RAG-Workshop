@@ -285,9 +285,50 @@ answer = chain.invoke("How do I reset my password?")
 
 ## Building the Pipeline
 
-### Method 1: RetrievalQA (Simple)
+### Method 1: LCEL (Modern, Recommended)
+
+**LCEL (LangChain Expression Language)** is the modern way to build chains using the pipe operator (`|`).
 
 ```python
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+
+# Helper to format retrieved documents
+def format_docs(docs):
+    return "\n\n---\n\n".join(doc.page_content for doc in docs)
+
+# Build the chain using pipe operator
+chain = (
+    {
+        "context": retriever | format_docs,  # Get docs and format them
+        "question": RunnablePassthrough()     # Pass question through
+    }
+    | prompt      # Fill in the prompt template
+    | llm         # Generate answer
+    | StrOutputParser()  # Extract string from response
+)
+
+# Use the chain
+answer = chain.invoke("What causes authentication failures?")
+print(answer)
+```
+
+**Benefits of LCEL:**
+- ✅ Composable: Chain components like Unix pipes
+- ✅ Type-safe: Better error messages
+- ✅ Streaming: Built-in support for streaming responses
+- ✅ Async: Native async/await support
+- ✅ Flexible: Easy to add custom logic
+- ✅ Modern: Actively maintained
+
+**Learn more:** https://python.langchain.com/docs/expression_language/
+
+### Method 2: RetrievalQA (Legacy, Deprecated)
+
+⚠️ **Note:** RetrievalQA is deprecated. Use LCEL instead for new projects.
+
+```python
+# OLD WAY - Don't use in new code
 from langchain.chains import RetrievalQA
 
 qa_chain = RetrievalQA.from_chain_type(
@@ -297,37 +338,18 @@ qa_chain = RetrievalQA.from_chain_type(
     return_source_documents=True
 )
 
-result = qa_chain("What causes authentication failures?")
+result = qa_chain({"query": "What causes authentication failures?"})
 print(result['result'])  # Answer
 print(result['source_documents'])  # Source chunks
 ```
 
-**Chain Types:**
+**Chain Types (for reference):**
 - `stuff`: Put all docs in one prompt (simple, limited by context)
 - `map_reduce`: Summarize each doc, then combine (slower, works for many docs)
 - `refine`: Iteratively refine answer with each doc (best quality, slowest)
 - `map_rerank`: Score each doc's answer, return best (good for diverse results)
 
-### Method 2: LCEL (Flexible)
-
-```python
-from langchain_core.runnables import RunnablePassthrough
-
-def format_docs(docs):
-    return "\n\n".join(doc.page_content for doc in docs)
-
-chain = (
-    {
-        "context": retriever | format_docs,
-        "question": RunnablePassthrough()
-    }
-    | prompt
-    | llm
-    | StrOutputParser()
-)
-```
-
-### Method 3: ConversationalRetrievalChain (Chat)
+### Method 3: ConversationalRetrievalChain (Chat with Memory)
 
 ```python
 from langchain.chains import ConversationalRetrievalChain

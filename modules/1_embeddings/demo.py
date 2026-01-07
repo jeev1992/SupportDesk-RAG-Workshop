@@ -7,7 +7,7 @@ This demo teaches:
 1. How to generate embeddings from text
 2. Computing similarity scores
 3. Finding most similar documents
-4. Visualizing embeddings in 2D space
+4. Visualizing embedding relationships with accuracy
 
 LEARNING RESOURCES:
 - OpenAI Embeddings Guide: https://platform.openai.com/docs/guides/embeddings
@@ -22,7 +22,6 @@ import os
 from openai import OpenAI  # OpenAI API client for generating embeddings
 from sklearn.metrics.pairwise import cosine_similarity  # Measure similarity between vectors
 import matplotlib.pyplot as plt  # For visualizing embeddings
-from sklearn.decomposition import PCA  # Dimensionality reduction for visualization
 from dotenv import load_dotenv  # Load environment variables from .env file
 
 # Load environment variables (API keys, model names, etc.)
@@ -102,7 +101,7 @@ print("PART 2: Computing Similarity Scores")
 print("="*80)
 
 # Create a search query
-query = "Users can't authenticate after changing password"
+query = "Users can't login after changing password"
 print(f"\nSearch Query: '{query}'")
 
 # Generate embedding for the query using the SAME model as documents
@@ -153,68 +152,80 @@ for rank, idx in enumerate(top_indices, 1):
     print(f"Description: {ticket['description'][:150]}...")
 
 # ============================================================================
-# PART 4: Visualize Embeddings in Semantic Space
+# PART 4: Visualize What Embeddings Actually Capture
 # ============================================================================
 print("\n" + "="*80)
-print("PART 4: Visualizing Embeddings in Semantic Space")
+print("PART 4: Visualizing Similarity Relationships")
 print("="*80)
 
-print(f"\nTo visualize {embedding_dim}-dimensional embeddings, we need to project them into 2D...")
-print("Think of it like taking a photo of a 3D object - we lose some detail but can see relationships.")
+print("\nEmbeddings capture semantic relationships through similarity scores.")
+print("Let's visualize these relationships using exact similarity measurements.\n")
 
-# Use PCA (Principal Component Analysis) to reduce dimensions
-# PCA finds the 2 directions that capture the most variance in the data
-# Reference: https://scikit-learn.org/stable/modules/decomposition.html#pca
-# Don't worry about the math - just know it preserves relative distances as much as possible
-pca = PCA(n_components=2)
-embeddings_2d = pca.fit_transform(embeddings)  # Transform all ticket embeddings
-query_2d = pca.transform(query_embedding)  # Transform query using same projection
+# Create similarity heatmap for top tickets
+# This shows the TRUE relationships captured by the 1536-dimensional embeddings
+print("Creating similarity heatmap...")
 
-print("✓ Embeddings projected to 2D for visualization")
-print("\nWhat you'll see:")
-print("  • Each dot = one support ticket")
-print("  • Closer dots = more semantically similar tickets")
-print("  • Red star = your search query")
-print("  • Red circles = top-5 matches")
+# Select top matches and a few random others for comparison
+selected_indices = list(top_indices[:5]) + list(np.random.choice(
+    [i for i in range(len(tickets)) if i not in top_indices[:5]], 
+    size=min(5, len(tickets) - 5), 
+    replace=False
+))
 
-# Create the plot
-# Matplotlib reference: https://matplotlib.org/stable/tutorials/index.html
-plt.figure(figsize=(12, 8))
+# Compute similarity matrix for selected tickets
+selected_embeddings = embeddings[selected_indices]
+similarity_matrix = cosine_similarity(selected_embeddings)
 
-# Plot all tickets by category
-categories = list(set(ticket['category'] for ticket in tickets))
-colors = plt.cm.tab10(np.linspace(0, 1, len(categories)))
-category_to_color = dict(zip(categories, colors))
+# Create the heatmap
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
 
-for i, ticket in enumerate(tickets):
-    color = category_to_color[ticket['category']]
-    plt.scatter(embeddings_2d[i, 0], embeddings_2d[i, 1], 
-               c=[color], label=ticket['category'], s=100, alpha=0.6)
+# Left plot: Similarity heatmap
+im = ax1.imshow(similarity_matrix, cmap='RdYlGn', vmin=0, vmax=1)
+ax1.set_xticks(range(len(selected_indices)))
+ax1.set_yticks(range(len(selected_indices)))
 
-# Highlight top-5 matches with red circles
-for idx in top_indices:
-    plt.scatter(embeddings_2d[idx, 0], embeddings_2d[idx, 1], 
-               s=300, facecolors='none', edgecolors='red', linewidths=2)
+# Label with ticket IDs
+labels = [f"{tickets[i]['ticket_id']}\n({tickets[i]['category']})" 
+          for i in selected_indices]
+ax1.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+ax1.set_yticklabels(labels, fontsize=8)
 
-# Plot query as red star
-plt.scatter(query_2d[0, 0], query_2d[0, 1], 
-           c='red', marker='*', s=500, label='Query', edgecolors='black', linewidths=2)
+# Add similarity values to cells
+for i in range(len(selected_indices)):
+    for j in range(len(selected_indices)):
+        text = ax1.text(j, i, f'{similarity_matrix[i, j]:.2f}',
+                       ha="center", va="center", color="black", fontsize=9)
 
-# Remove duplicate labels
-handles, labels = plt.gca().get_legend_handles_labels()
-by_label = dict(zip(labels, handles))
-plt.legend(by_label.values(), by_label.keys(), loc='best')
+ax1.set_title('Similarity Heatmap: What Embeddings Actually Measure\n' + 
+             '(Top 5 matches + random others)', fontweight='bold', fontsize=11)
+plt.colorbar(im, ax=ax1, label='Cosine Similarity')
 
-plt.title('Embeddings in Semantic Space: Similar Meanings Cluster Together', 
-         fontsize=14, fontweight='bold')
-plt.xlabel('Semantic Dimension 1')
-plt.ylabel('Semantic Dimension 2')
-plt.grid(True, alpha=0.3)
+# Right plot: Query similarities bar chart
+query_similarities = [similarities[i] for i in selected_indices]
+colors_bar = ['green' if i < 5 else 'gray' for i in range(len(selected_indices))]
+
+ax2.barh(range(len(selected_indices)), query_similarities, color=colors_bar, alpha=0.7)
+ax2.set_yticks(range(len(selected_indices)))
+ax2.set_yticklabels([f"{tickets[i]['ticket_id']}" for i in selected_indices], fontsize=9)
+ax2.set_xlabel('Similarity to Query', fontweight='bold')
+ax2.set_title(f'Similarity Scores for Query:\n"{query}"\n(Green = Top 5 matches)', 
+             fontweight='bold', fontsize=11)
+ax2.set_xlim(0, 1)
+ax2.grid(axis='x', alpha=0.3)
+
+# Add score labels
+for i, score in enumerate(query_similarities):
+    ax2.text(score + 0.02, i, f'{score:.3f}', va='center', fontsize=9)
+
 plt.tight_layout()
-
-# Save the plot
-plt.savefig('embeddings_visualization.png', dpi=150)
-print("\n✓ Visualization saved as 'embeddings_visualization.png'")
+plt.savefig('embeddings_similarity_analysis.png', dpi=150, bbox_inches='tight')
+print("✓ Visualization saved as 'embeddings_similarity_analysis.png'")
+print("\nKEY INSIGHTS FROM THIS VISUALIZATION:")
+print("  • Left heatmap: Shows TRUE pairwise similarities in 1536D space")
+print("  • Right chart: Query similarity scores (what drives retrieval)")
+print("  • High similarity (green) = semantically similar content")
+print("  • Low similarity (red) = different topics/meanings")
+print("  • These scores are EXACT - they show true relationships in 1536D space!")
 plt.show()
 
 # ============================================================================
@@ -246,8 +257,9 @@ print("\n" + "="*80)
 print("DEMO COMPLETE!")
 print("="*80)
 print("\nKey Takeaways:")
-print("1. Embeddings convert text into numerical vectors")
+print("1. Embeddings convert text into numerical vectors in high-dimensional space")
 print("2. Similar meanings → similar vectors (measured by cosine similarity)")
 print("3. Semantic search finds meaning, not just keywords")
-print("4. Embeddings can be visualized to understand relationships")
+print("4. Similarity scores are the TRUE measure - they capture exact relationships")
+print("5. Similarity scores show true relationships in high-dimensional space")
 print("\nNext: Hour 2 - Chunking & Vector Stores")
