@@ -8,23 +8,36 @@ This demo teaches:
 2. Building a FAISS vector store
 3. Using Chroma for high-level abstraction
 4. Comparing retrieval quality across strategies
+
+LEARNING RESOURCES:
+- Text Splitting Guide: https://python.langchain.com/docs/modules/data_connection/document_transformers/
+- FAISS Documentation: https://github.com/facebookresearch/faiss/wiki
+- Chroma DB: https://docs.trychroma.com/
+- Chunking Best Practices: https://www.pinecone.io/learn/chunking-strategies/
+
+WHY CHUNKING MATTERS:
+- Long documents exceed LLM context windows
+- Smaller chunks = more precise retrieval
+- Too small = loss of context
+- Too large = irrelevant information included
+- Goal: Each chunk should be a self-contained unit of meaning
 """
 
 import json
 import numpy as np
 import os
 from openai import OpenAI
-import faiss
-from langchain_text_splitters import (
-    RecursiveCharacterTextSplitter, 
-    CharacterTextSplitter,
-    MarkdownHeaderTextSplitter,
-    HTMLHeaderTextSplitter
+import faiss  # Facebook AI Similarity Search - fast vector search library
+from langchain_text_splitters import (  # Various splitting strategies
+    RecursiveCharacterTextSplitter,  # Best general-purpose splitter
+    CharacterTextSplitter,  # Simple split by character count
+    MarkdownHeaderTextSplitter,  # Splits based on markdown headers
+    HTMLHeaderTextSplitter  # Splits based on HTML tags
 )
-from langchain_experimental.text_splitter import SemanticChunker
-from langchain_community.vectorstores import Chroma, FAISS as LangChainFAISS
-from langchain_openai import OpenAIEmbeddings
-from langchain_core.documents import Document
+from langchain_experimental.text_splitter import SemanticChunker  # AI-powered semantic chunking
+from langchain_community.vectorstores import Chroma, FAISS as LangChainFAISS  # Vector databases
+from langchain_openai import OpenAIEmbeddings  # OpenAI embedding function
+from langchain_core.documents import Document  # Document abstraction
 from dotenv import load_dotenv
 
 # Load environment variables

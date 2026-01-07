@@ -8,19 +8,28 @@ This demo teaches:
 2. LangChain components (retrievers, prompts, chains)
 3. Anti-hallucination strategies
 4. Building a production-ready Q&A system
+
+LEARNING RESOURCES:
+- RAG Paper (Lewis et al.): https://arxiv.org/abs/2005.11401
+- LangChain Documentation: https://python.langchain.com/docs/get_started/introduction
+- LCEL Guide: https://python.langchain.com/docs/expression_language/
+- Prompt Engineering: https://platform.openai.com/docs/guides/prompt-engineering
+- Chroma Vector DB: https://docs.trychroma.com/
 """
 
 import json
 import os
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+# LangChain is a framework for building LLM applications
+# Reference: https://python.langchain.com/docs/get_started/introduction
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI  # OpenAI integrations
+from langchain_community.vectorstores import Chroma  # Vector database for similarity search
+from langchain_text_splitters import RecursiveCharacterTextSplitter  # Smart text chunking
+from langchain_core.documents import Document  # Document abstraction
+from langchain_core.prompts import ChatPromptTemplate  # Prompt templates
+from langchain_core.output_parsers import StrOutputParser  # Parse LLM output
+from langchain_core.runnables import RunnablePassthrough  # Pass data through pipeline
 
-# Load environment variables
+# Load environment variables (API keys, model names)
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -40,10 +49,13 @@ with open('../../data/synthetic_tickets.json', 'r') as f:
     tickets = json.load(f)
 print(f"✓ Loaded {len(tickets)} support tickets")
 
-# Convert to LangChain documents
+# Convert to LangChain Document objects
+# Documents are the core abstraction in LangChain - they combine content with metadata
+# Reference: https://python.langchain.com/docs/modules/data_connection/document_loaders/
 documents = []
 for ticket in tickets:
     # Create rich document with all context
+    # TIP: Structure your content logically - LLMs understand formatted text better
     content = f"""
 Ticket ID: {ticket['ticket_id']}
 Title: {ticket['title']}
@@ -58,9 +70,12 @@ Resolution:
 {ticket['resolution']}
     """.strip()
     
+    # Create Document with metadata
+    # Metadata is crucial for filtering, citation, and source tracking
+    # Best practice: Include all information you might want to filter or display later
     doc = Document(
-        page_content=content,
-        metadata={
+        page_content=content,  # The actual text content
+        metadata={  # Structured data about the document
             'ticket_id': ticket['ticket_id'],
             'title': ticket['title'],
             'category': ticket['category'],
@@ -73,19 +88,24 @@ Resolution:
 print(f"✓ Created {len(documents)} documents with metadata")
 
 # Initialize OpenAI embeddings
+# Embeddings convert text into vectors for semantic search
+# Reference: https://platform.openai.com/docs/guides/embeddings
 print("\nInitializing OpenAI embedding model...")
 embeddings = OpenAIEmbeddings(
     model=os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
 )
 print("✓ OpenAI embedding model ready")
 
-# Build vector store
+# Build vector store using Chroma
+# Chroma is an open-source vector database optimized for AI applications
+# It stores embeddings and enables fast similarity search
+# Reference: https://docs.trychroma.com/
 print("\nBuilding Chroma vector store...")
 vector_store = Chroma.from_documents(
-    documents=documents,
-    embedding=embeddings,
-    collection_name="supportdesk_rag",
-    persist_directory="./rag_vectorstore"
+    documents=documents,  # Our support ticket documents
+    embedding=embeddings,  # Embedding function to use
+    collection_name="supportdesk_rag",  # Name for this collection
+    persist_directory="./rag_vectorstore"  # Where to save the database
 )
 print("✓ Vector store created and persisted")
 
@@ -96,15 +116,21 @@ print("\n" + "="*80)
 print("PART 2: Setting Up Retriever")
 print("="*80)
 
-# Basic retriever
+# Create a retriever from the vector store
+# Retrievers are the interface for querying the vector store
+# Reference: https://python.langchain.com/docs/modules/data_connection/retrievers/
 retriever = vector_store.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 3}  # Retrieve top-3 documents
+    search_type="similarity",  # Use cosine similarity for ranking
+    search_kwargs={"k": 3}  # Retrieve top-3 most similar documents
+    # Other options:
+    # - "mmr" (Maximal Marginal Relevance): Balances relevance with diversity
+    # - "similarity_score_threshold": Only return docs above a score threshold
 )
 
 print("✓ Retriever configured:")
 print(f"  - Search type: similarity")
 print(f"  - Top-K results: 3")
+print("\nTIP: k=3-5 is usually optimal. Too few → missing context, too many → noise")
 
 # Test retriever
 test_query = "Users can't log in after changing passwords"
@@ -124,6 +150,13 @@ print("PART 3: Prompt Engineering for RAG")
 print("="*80)
 
 # Define strict grounding prompt
+# Prompt engineering is CRUCIAL for RAG - it tells the LLM how to use the context
+# Reference: https://platform.openai.com/docs/guides/prompt-engineering
+# Key principles:
+# 1. Be explicit about using ONLY the provided context
+# 2. Define what to do when information is missing
+# 3. Request citations for transparency and verification
+# 4. Set the role/persona for appropriate tone
 prompt_template = """You are SupportDesk AI, a technical support assistant that helps engineers troubleshoot issues using historical support ticket data.
 
 CRITICAL RULES:
@@ -140,6 +173,9 @@ Question: {question}
 
 Helpful Answer (with ticket citations):"""
 
+# Convert string template to ChatPromptTemplate
+# This creates a reusable template with variable placeholders
+# Reference: https://python.langchain.com/docs/modules/model_io/prompts/
 PROMPT = ChatPromptTemplate.from_template(prompt_template)
 
 print("✓ Prompt template created with anti-hallucination rules:")
@@ -157,9 +193,13 @@ print("="*80)
 # Check if OpenAI key is available
 if os.getenv("OPENAI_API_KEY"):
     print("✓ OpenAI API key found")
+    # Initialize ChatOpenAI for generation
+    # Reference: https://python.langchain.com/docs/integrations/chat/openai
     llm = ChatOpenAI(
         model=os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'),
-        temperature=0,  # Deterministic output, less creativity
+        temperature=0,  # Temperature controls randomness (0 = deterministic, 2 = very creative)
+        # For RAG, use temperature=0 to ensure consistent, factual responses
+        # Reference: https://platform.openai.com/docs/guides/text-generation/how-should-i-set-the-temperature-parameter
     )
     print(f"✓ Using {os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini')}")
 else:
@@ -170,17 +210,30 @@ else:
     llm = None
 
 # ============================================================================
-# PART 5: Build RAG Chain
+# PART 5: Build RAG Chain using LCEL (LangChain Expression Language)
 # ============================================================================
 print("\n" + "="*80)
 print("PART 5: Assembling RAG Chain")
 print("="*80)
 
+# Helper function to format retrieved documents
+# This concatenates all retrieved document contents into a single context string
 def format_docs(docs):
     return "\n\n---\n\n".join([doc.page_content for doc in docs])
 
 if llm:
-    # Build RAG chain using LCEL
+    # Build RAG chain using LCEL (LangChain Expression Language)
+    # LCEL allows you to chain components using the | operator (like Unix pipes)
+    # Reference: https://python.langchain.com/docs/expression_language/
+    #
+    # This chain does:
+    # 1. Takes a question (string input)
+    # 2. Retriever gets relevant docs, format_docs combines them
+    # 3. PROMPT fills in {context} and {question} variables
+    # 4. LLM generates answer based on filled prompt
+    # 5. StrOutputParser extracts the string response
+    #
+    # The dict {"context": ..., "question": ...} creates the input for the prompt
     qa_chain = (
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | PROMPT
@@ -189,6 +242,7 @@ if llm:
     )
     print("✓ RAG chain assembled:")
     print("  Retriever → Context Injection → LLM → Answer")
+    print("\nThis is the complete RAG pipeline! Query in → Answer out")
 else:
     qa_chain = None
     print("⚠ LLM not available, showing architecture only")
