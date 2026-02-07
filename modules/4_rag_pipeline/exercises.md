@@ -1,10 +1,16 @@
-# Hour 3 Exercises: RAG Pipeline
+# Module 4 Exercises: RAG Pipeline
 
-## Exercise 1: Modify the Prompt Template (Easy)
+Complete these exercises after studying `demo.py`. Solutions are in `solutions.py`.
 
-**Task**: Experiment with different prompt templates and observe how they affect answers.
+---
 
-**Try these variations**:
+## Easy Exercises (Start Here!)
+
+### Exercise 1: Modify the Prompt Template
+
+**Task**: Change the prompt template and observe how it affects answers.
+
+**In demo.py, find this prompt template (around line 155) and try these variations:**
 
 **Version A: More concise**
 ```python
@@ -33,7 +39,7 @@ Think step by step:
 Answer:"""
 ```
 
-**Version C: Format with bullet points**
+**Version C: Bullet point format**
 ```python
 template = """Answer using only the context. Format as bullet points with ticket citations.
 
@@ -44,39 +50,31 @@ Question: {question}
 Answer (bullet points with sources):"""
 ```
 
-**Test with**: "How do I fix authentication issues?"
+**Test with**: `"How do I fix authentication issues?"`
 
-**Questions**:
+**Questions to answer**:
 - Which prompt gives the most useful answers?
 - Which format is easiest to read?
 - Does any version hallucinate more?
 
 ---
 
-## Exercise 2: Adjust Retrieval Parameters (Medium)
+### Exercise 2: Adjust Retrieval Parameters
 
-**Task**: Experiment with different retrieval configurations.
+**Task**: Change the number of retrieved documents and search type.
 
-**Parameters to tune**:
+**In demo.py, find the retriever setup (around line 120) and try:**
+
 ```python
-# Number of documents
-retriever = vector_store.as_retriever(search_kwargs={"k": 1})  # vs k=5
-retriever = vector_store.as_retriever(search_kwargs={"k": 10})
+# Change k from 3 to different values
+retriever = vector_store.as_retriever(search_kwargs={"k": 1})   # Very focused
+retriever = vector_store.as_retriever(search_kwargs={"k": 5})   # Broader
+retriever = vector_store.as_retriever(search_kwargs={"k": 10})  # Maximum context
 
-# Search type
+# Try MMR for diverse results
 retriever = vector_store.as_retriever(
-    search_type="similarity",  # Default
-    search_kwargs={"k": 3}
-)
-
-retriever = vector_store.as_retriever(
-    search_type="mmr",  # Maximal Marginal Relevance (diverse results)
+    search_type="mmr",
     search_kwargs={"k": 3, "fetch_k": 10}
-)
-
-retriever = vector_store.as_retriever(
-    search_type="similarity_score_threshold",
-    search_kwargs={"score_threshold": 0.5, "k": 3}
 )
 ```
 
@@ -88,27 +86,19 @@ retriever = vector_store.as_retriever(
 **Questions**:
 - How does k affect answer quality?
 - When is MMR better than similarity?
-- What's a good similarity threshold?
 
 ---
 
-## Exercise 3: Implement Citation Formatting (Medium)
+### Exercise 3: Implement Citation Formatting
 
 **Task**: Make the assistant always include inline citations.
 
-**Goal output**:
-```
-Authentication failures after password reset are caused by stale session tokens [TICK-001]. 
-The solution is to clear all active sessions and force re-authentication [TICK-001]. 
-Implement automatic session cleanup on password change to prevent this issue.
-```
-
-**Approach**:
+**Modify the prompt to require citations:**
 ```python
 citation_prompt = """Answer the question using the context. Include inline citations [TICK-XXX] after each fact.
 
 Example format:
-"Database connection timeouts occur when the pool is undersized [TICK-002]. Increase max_connections and monitor usage [TICK-002]."
+"Database connection timeouts occur when the pool is undersized [TICK-002]. Increase max_connections [TICK-002]."
 
 Context:
 {context}
@@ -118,37 +108,39 @@ Question: {question}
 Answer with inline citations:"""
 ```
 
-**Bonus**: Create a function to extract and verify all cited tickets exist in context.
+**Goal output**:
+```
+Authentication failures after password reset are caused by stale session tokens [TICK-001]. 
+The solution is to clear all active sessions and force re-authentication [TICK-001].
+```
 
 ---
 
-## Exercise 4: Build a Fallback System (Medium)
+### Exercise 4: Build a Fallback System
 
-**Task**: Implement graceful fallbacks when retrieval fails or confidence is low.
+**Task**: Handle cases where retrieval confidence is low.
 
-**Requirements**:
+**Add this function to handle fallbacks:**
 ```python
-def smart_rag(query, qa_chain, vector_store):
-    """
-    RAG with intelligent fallbacks
-    """
-    # Step 1: Check retrieval quality
+def smart_rag(query, vector_store, qa_chain):
+    """RAG with intelligent fallbacks"""
+    # Get docs with scores (lower distance = better match)
     docs_with_scores = vector_store.similarity_search_with_score(query, k=3)
     
     if not docs_with_scores:
         return "No relevant tickets found."
     
-    best_score = docs_with_scores[0][1]
+    best_distance = docs_with_scores[0][1]
     
-    # Step 2: Score-based responses
-    if best_score < 0.3:  # Very relevant
-        return qa_chain({"query": query})['result']
+    if best_distance < 0.5:  # Very relevant
+        return qa_chain.invoke(query)
     
-    elif best_score < 0.7:  # Somewhat relevant
-        return f"Found possibly relevant tickets ({docs_with_scores[0][0].metadata['ticket_id']}), but confidence is moderate. Would you like me to show them?"
+    elif best_distance < 1.0:  # Somewhat relevant
+        ticket_id = docs_with_scores[0][0].metadata['ticket_id']
+        return f"Found possibly relevant ticket ({ticket_id}), but confidence is moderate."
     
     else:  # Not relevant
-        return "I don't have relevant ticket history for this question. Could you rephrase or ask about a different issue?"
+        return "I don't have relevant ticket history for this question."
 ```
 
 **Test with**:
@@ -158,246 +150,156 @@ def smart_rag(query, qa_chain, vector_store):
 
 ---
 
-## Exercise 5: Multi-Turn Conversation with Memory (Hard)
+## Medium Exercises
 
-**Task**: Add conversation memory so the assistant remembers previous questions.
+### Exercise 5: Compare Chain Types
 
-**Requirements**:
+**Task**: Implement different retrieval strategies and compare performance.
+
 ```python
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
+import time
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
-# Create memory
-memory = ConversationBufferMemory(
-    memory_key="chat_history",
-    return_messages=True,
-    output_key='answer'
+# 1. "stuff" strategy - All docs in one prompt (default LCEL pattern)
+stuff_prompt = ChatPromptTemplate.from_template(
+    "Answer using context:\n\nContext: {context}\n\nQuestion: {question}"
+)
+stuff_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | stuff_prompt | llm | StrOutputParser()
 )
 
-# Create conversational chain
-conversational_chain = ConversationalRetrievalChain.from_llm(
-    llm=llm,
-    retriever=retriever,
-    memory=memory,
-    return_source_documents=True
-)
+# 2. "map_reduce" strategy - Process each doc, then combine
+docs = retriever.invoke(query)
+individual_answers = []
+for doc in docs:
+    single_chain = single_doc_prompt | llm | StrOutputParser()
+    individual_answers.append(single_chain.invoke({"doc": doc.page_content}))
+combined_result = combine_chain.invoke({"summaries": "\n".join(individual_answers)})
 ```
 
-**Test conversation**:
-```
-User: "What causes authentication failures?"
-Assistant: [answers about TICK-001]
-
-User: "How do I fix it?"  # Should remember we're talking about auth
-Assistant: [provides solution from TICK-001]
-
-User: "What about database issues?"  # New topic
-Assistant: [switches to database tickets]
-```
-
-**Challenge**: Clear memory when switching topics.
-
----
-
-## Exercise 6: Compare Chain Types (Medium)
-
-**Task**: LangChain supports different chain types for RAG. Compare them.
-
-**Chain types**:
-
-1. **"stuff"** - Concatenate all docs into one prompt
-```python
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever
-)
-```
-
-2. **"map_reduce"** - Process each doc separately, then combine
-```python
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="map_reduce",
-    retriever=retriever
-)
-```
-
-3. **"refine"** - Iteratively refine answer with each doc
-```python
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="refine",
-    retriever=retriever
-)
-```
-
-**Compare**:
+**Compare for query `"How do I fix database timeouts?"`**:
 - Speed
-- Answer quality
+- Answer quality  
 - Token usage
 - Best use cases
 
 ---
 
-## Exercise 7: Add Streaming Responses (Medium)
+### Exercise 6: Add Metadata Filtering
 
-**Task**: Make the assistant stream responses word-by-word (better UX for long answers).
+**Task**: Filter results by ticket category or priority.
 
-**Implementation**:
+```python
+# Without filter - returns any category
+docs = vector_store.similarity_search(query, k=3)
+
+# With category filter
+docs = vector_store.similarity_search(
+    query, 
+    k=3,
+    filter={"category": "Authentication"}
+)
+
+# With priority filter
+docs = vector_store.similarity_search(
+    query, 
+    k=3,
+    filter={"priority": "High"}
+)
+```
+
+**Test query**: "system problem"
+- Compare results with and without filters
+
+---
+
+### Exercise 7: Add Streaming Responses
+
+**Task**: Stream responses word-by-word for better UX.
+
 ```python
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
+# Create streaming LLM
+streaming_llm = ChatOpenAI(
+    model="gpt-4o-mini",
     temperature=0,
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()]
 )
 
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever
-)
-
-# Now responses will stream!
-result = qa_chain({"query": "How to fix database timeouts?"})
-```
-
-**Bonus**: Create a custom callback to count tokens as they stream.
-
----
-
-## Exercise 8: Implement RAG with Local LLM (Challenge)
-
-**Task**: Use Ollama or other local models instead of OpenAI.
-
-**Setup Ollama**:
-```bash
-# Install Ollama from ollama.ai
-ollama pull llama2
-```
-
-**Use in LangChain**:
-```python
-from langchain_community.llms import Ollama
-
-llm = Ollama(
-    model="llama2",
-    temperature=0
-)
-
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever,
-    chain_type_kwargs={"prompt": PROMPT}
-)
-```
-
-**Compare**:
-- Speed vs OpenAI
-- Answer quality
-- Cost (free!)
-- Privacy (no data leaves your machine)
-
----
-
-## Exercise 9: Build a RAG API (Hard)
-
-**Task**: Create a FastAPI endpoint for your RAG system.
-
-**Implementation**:
-```python
-from fastapi import FastAPI
-from pydantic import BaseModel
-
-app = FastAPI()
-
-class Query(BaseModel):
-    question: str
-    k: int = 3
-
-@app.post("/ask")
-async def ask_question(query: Query):
-    """RAG API endpoint"""
-    # Update retriever with custom k
-    custom_retriever = vector_store.as_retriever(
-        search_kwargs={"k": query.k}
-    )
-    
-    # Get answer
-    result = qa_chain({"query": query.question})
-    
-    return {
-        "answer": result['result'],
-        "sources": [
-            {
-                "ticket_id": doc.metadata['ticket_id'],
-                "title": doc.metadata['title']
-            }
-            for doc in result['source_documents']
-        ]
-    }
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-```
-
-**Run**:
-```bash
-uvicorn api:app --reload
-```
-
-**Test**:
-```bash
-curl -X POST "http://localhost:8000/ask" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "How to fix auth issues?", "k": 5}'
+# Use in your chain
+chain = your_prompt | streaming_llm | StrOutputParser()
+result = chain.invoke(query)  # Will print token by token!
 ```
 
 ---
 
-## Exercise 10: Hallucination Detection (Advanced)
+### Exercise 8: Multi-Turn Conversation
 
-**Task**: Build a system to detect when the LLM hallucinates.
+**Task**: Add message history so the assistant remembers previous questions.
 
-**Approach**:
 ```python
-def detect_hallucination(query, answer, source_documents):
-    """
-    Check if answer contains information not in sources
-    """
-    # Extract all content from source documents
-    source_text = " ".join([doc.page_content for doc in source_documents])
-    
-    # Embed both
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    answer_embedding = model.encode([answer])
-    source_embedding = model.encode([source_text])
-    
-    # Check similarity
-    similarity = cosine_similarity(answer_embedding, source_embedding)[0][0]
-    
-    # Low similarity = possible hallucination
-    if similarity < 0.6:
-        return True, f"Warning: Answer may contain information not in sources (similarity: {similarity:.2f})"
-    
-    return False, "Answer appears grounded in sources"
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# Test
-result = qa_chain({"query": "How to fix database timeouts?"})
-is_hallucination, message = detect_hallucination(
-    query="How to fix database timeouts?",
-    answer=result['result'],
-    source_documents=result['source_documents']
-)
-print(message)
+# Store chat history
+chat_history = []
+
+# Create conversational prompt
+conv_prompt = ChatPromptTemplate.from_messages([
+    ("system", "Answer using context: {context}"),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{question}")
+])
+
+# Build chain with history
+def ask_with_history(question):
+    context = format_docs(retriever.invoke(question))
+    chain = conv_prompt | llm | StrOutputParser()
+    response = chain.invoke({"context": context, "history": chat_history, "question": question})
+    chat_history.append(HumanMessage(content=question))
+    chat_history.append(AIMessage(content=response))
+    return response
+
+# Test conversation - context carries over
+result1 = ask_with_history("What causes authentication failures?")
+result2 = ask_with_history("How do I fix it?")  # Remembers auth topic
 ```
 
-**Bonus**: Use an LLM as a judge to verify grounding.
+---
+
+## Bonus Challenge
+
+### Bonus: Hallucination Detection
+
+**Task**: Detect when the LLM makes up information not in sources.
+
+```python
+def detect_hallucination(answer, source_documents, llm):
+    """Use LLM-as-judge to verify grounding"""
+    source_text = "\n\n".join([doc.page_content for doc in source_documents])
+    
+    prompt = f"""You are a fact-checker. Determine if the answer is fully grounded in sources.
+
+SOURCE DOCUMENTS:
+{source_text}
+
+ANSWER TO CHECK:
+{answer}
+
+Is every claim supported by the sources?
+Respond: "GROUNDED" or "HALLUCINATION" with brief explanation.
+
+Response:"""
+    
+    return llm.invoke(prompt).content
+```
+
+**Test**: Run this on your RAG answers and see if it catches any hallucinations.
 
 ---
 
@@ -414,14 +316,13 @@ Before deploying RAG to production:
 - [ ] Set token limits to control costs
 - [ ] Create fallback for API failures
 - [ ] Add response time tracking
-- [ ] Implement A/B testing framework
 
 ---
 
 ## Next Steps
 
-Ready for **Hour 4: Evaluation**? Learn how to systematically measure and improve your RAG system!
+Ready for **Module 5: Evaluation**? Learn how to systematically measure and improve your RAG system!
 
 ---
 
-**Need help?** Check the demo code or ask the instructor!
+**Need help?** Check `solutions.py` or ask the instructor!

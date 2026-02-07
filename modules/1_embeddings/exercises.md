@@ -1,255 +1,335 @@
 # Hour 1 Exercises: Embeddings & Similarity Search
 
-## Exercise 1: Find Similar Tickets (Easy)
+## Exercise 1: Change the Search Query (Easy)
 
-**Task**: Modify the demo to find the top-10 most similar tickets instead of top-5.
+**Task**: Modify the demo to search for a different type of issue.
 
-**Steps**:
-1. Change the `top_k` variable in the demo code
-2. Run the modified script
-3. Observe how similarity scores decrease as you go down the rankings
-
-**Questions**:
-- At what rank does the similarity score drop below 0.5?
-- Are all top-10 results still relevant to the query?
-
----
-
-## Exercise 2: Experiment with Different Embedding Models (Medium)
-
-**Task**: Compare results using different OpenAI embedding models.
-
-**Models to try**:
+**In the demo code, find this line** (around line 103):
 ```python
-from openai import OpenAI
-
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-
-# Small and fast (1536 dimensions)
-model = 'text-embedding-3-small'
-
-# Larger and more accurate (3072 dimensions)
-model = 'text-embedding-3-large'
-
-# Legacy model (1536 dimensions)
-model = 'text-embedding-ada-002'
+query = "Users can't login after changing password"
 ```
 
-**Steps**:
-1. Modify the demo to use each model
-2. Compare the top-5 results for the same query
-3. Note differences in similarity scores and retrieval quality
+**Change it to**:
+```python
+query = "Database is running very slowly"
+```
 
-**Questions**:
-- Which model gives the most relevant results?
-- How does the larger model (text-embedding-3-large) compare?
-- Is the quality improvement worth the higher cost?
-- What's the trade-off between model size, cost, and accuracy?
+**Run the demo and observe**:
+- Do the top results match the new query?
+- What categories do the matching tickets belong to?
+
+**Try these queries too**:
+- `"Payment failed for international customer"`
+- `"Mobile app keeps crashing"`
+- `"Emails are not being delivered"`
 
 ---
 
-## Exercise 3: Custom Query Testing (Medium)
+## Exercise 2: Adjust the Number of Results (Easy)
 
-**Task**: Test the semantic search with your own queries.
+**Task**: Get more search results by changing top_k.
 
-**Suggested queries**:
-- "Credentials rejected after password change"
-- "Connection pool exhausted"  
-- "iOS application force closes"
-- "Credit card payment declined"
-- "Memory usage increasing continuously"
-
-**Steps**:
-1. Create a function to search for similar tickets:
+**In the demo code, find this line** (around line 137):
 ```python
-def search_tickets(query, tickets, embeddings, client, model_name, top_k=5):
-    # Generate query embedding
-    response = client.embeddings.create(input=[query], model=model_name)
+top_k = 5
+```
+
+**Change it to**:
+```python
+top_k = 10
+```
+
+**Run the demo and answer**:
+- At what rank does the similarity score drop below 0.5?
+- Are results #8, #9, #10 still relevant to your query?
+- What's the similarity score of result #10?
+
+---
+
+## Exercise 3: Add a Similarity Threshold (Easy)
+
+**Task**: Only show results above a certain similarity score.
+
+**Find the results loop in the demo** (around line 145):
+```python
+for rank, idx in enumerate(top_indices, 1):
+    ticket = tickets[idx]
+    score = similarities[idx]
+    
+    print(f"\n#{rank} - Similarity: {score:.4f}")
+    # ... rest of printing
+```
+
+**Add one line to skip low-scoring results**:
+```python
+for rank, idx in enumerate(top_indices, 1):
+    ticket = tickets[idx]
+    score = similarities[idx]
+    
+    # ADD THIS LINE: Skip results below threshold
+    if score < 0.5:
+        continue
+    
+    print(f"\n#{rank} - Similarity: {score:.4f}")
+    # ... rest of printing
+```
+
+**Test with**:
+- A relevant query (should show results)
+- An unrelated query like `"How to make pizza"` (should show fewer/no results)
+
+---
+
+## Exercise 4: Compare Two Queries (Easy)
+
+**Task**: See how the same tickets rank differently for different queries.
+
+**Add this code at the end of the demo** (after PART 5):
+```python
+# Compare two queries
+query1 = "Login authentication failed"
+query2 = "Slow database performance"
+
+print("\n" + "="*80)
+print("COMPARING TWO QUERIES")
+print("="*80)
+
+for q in [query1, query2]:
+    response = client.embeddings.create(input=[q], model=embedding_model)
+    q_emb = np.array([response.data[0].embedding])
+    sims = cosine_similarity(q_emb, embeddings)[0]
+    top_idx = np.argmax(sims)
+    
+    print(f"\nQuery: '{q}'")
+    print(f"  Best match: {tickets[top_idx]['title']}")
+    print(f"  Score: {sims[top_idx]:.4f}")
+```
+
+**Run it and observe**: Do the queries find appropriate tickets?
+
+---
+
+## Exercise 5: Test Semantic Understanding (Medium)
+
+**Task**: Verify that embeddings understand meaning, not just keywords.
+
+**Copy this complete code into a new file** `test_semantic.py`:
+```python
+import numpy as np
+import os
+from openai import OpenAI
+from sklearn.metrics.pairwise import cosine_similarity
+from dotenv import load_dotenv
+
+load_dotenv()
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+model = 'text-embedding-3-small'
+
+# These mean the SAME thing but use DIFFERENT words
+texts = [
+    "User authentication failed",      # Original
+    "Login credentials rejected",       # Same meaning, different words
+    "Cannot sign in to account",        # Same meaning, different words
+    "Database connection timeout",      # DIFFERENT topic
+]
+
+# Generate embeddings
+response = client.embeddings.create(input=texts, model=model)
+embeddings = np.array([data.embedding for data in response.data])
+
+# Calculate all pairwise similarities
+similarity_matrix = cosine_similarity(embeddings)
+
+# Print results
+print("Similarity Matrix:")
+print("-" * 50)
+for i, text1 in enumerate(texts):
+    for j, text2 in enumerate(texts):
+        if i < j:  # Only print upper triangle
+            sim = similarity_matrix[i][j]
+            print(f"{sim:.3f}  '{text1[:30]}...' vs '{text2[:30]}...'")
+```
+
+**Run it and answer**:
+- What's the similarity between "authentication failed" and "login rejected"?
+- What's the similarity between "authentication failed" and "database timeout"?
+- Does this prove embeddings understand meaning, not just keywords?
+
+---
+
+## Exercise 6: Filter by Category (Medium)
+
+**Task**: Add category filtering to the search.
+
+**Copy and complete this code** (fill in the ONE missing line):
+```python
+import json
+import numpy as np
+import os
+from openai import OpenAI
+from sklearn.metrics.pairwise import cosine_similarity
+from dotenv import load_dotenv
+
+load_dotenv()
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+model = 'text-embedding-3-small'
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r') as f:
+    tickets = json.load(f)
+
+texts = [f"{t['title']}. {t['description']}" for t in tickets]
+response = client.embeddings.create(input=texts, model=model)
+embeddings = np.array([data.embedding for data in response.data])
+
+def search_with_category(query, category_filter=None, top_k=5):
+    """Search tickets, optionally filtering by category"""
+    # Get query embedding
+    response = client.embeddings.create(input=[query], model=model)
     query_emb = np.array([response.data[0].embedding])
     
     # Calculate similarities
     similarities = cosine_similarity(query_emb, embeddings)[0]
-    top_indices = np.argsort(similarities)[::-1][:top_k]
     
+    # Get results with category filter
     results = []
-    for idx in top_indices:
-        results.append({
-            'ticket': tickets[idx],
-            'similarity': similarities[idx]
-        })
+    for idx in np.argsort(similarities)[::-1]:
+        ticket = tickets[idx]
+        
+        # FILL IN THIS LINE: Skip if category doesn't match filter
+        # Hint: if category_filter is set AND ticket category doesn't match, skip
+        if category_filter and ticket['category'] != category_filter:
+            continue
+        
+        results.append((ticket, similarities[idx]))
+        if len(results) >= top_k:
+            break
+    
     return results
+
+# Test it
+print("All categories:")
+for ticket, score in search_with_category("login problem"):
+    print(f"  {score:.3f} [{ticket['category']}] {ticket['title']}")
+
+print("\nOnly 'Authentication' category:")
+for ticket, score in search_with_category("login problem", category_filter="Authentication"):
+    print(f"  {score:.3f} [{ticket['category']}] {ticket['title']}")
 ```
-
-2. Test with your queries
-3. Analyze which types of queries work best
-
-**Questions**:
-- Does semantic search find relevant tickets even with different wording?
-- What happens when you search for something not in the dataset?
 
 ---
 
-## Exercise 4: Similarity Threshold (Medium)
+## Exercise 7: Batch vs Single Embedding (Medium)
 
-**Task**: Implement a similarity threshold to filter irrelevant results.
+**Task**: Compare the speed of batch vs single API calls.
 
-**Requirements**:
-- Only show results with similarity > 0.5
-- If no results meet threshold, display "No relevant tickets found"
-- Display the number of tickets that met the threshold
-
-**Starter code**:
+**Copy and run this code** (no changes needed - just observe the results):
 ```python
-def search_with_threshold(query, tickets, embeddings, client, model_name, threshold=0.5, top_k=5):
-    # Generate query embedding
-    response = client.embeddings.create(input=[query], model=model_name)
-    query_emb = np.array([response.data[0].embedding])
-    
-    similarities = cosine_similarity(query_emb, embeddings)[0]
-    
-    # TODO: Filter by threshold
-    # TODO: Sort by similarity
-    # TODO: Return top_k results
-    pass
-```
-
-**Test with**:
-- A relevant query (should return results)
-- An irrelevant query like "How to make pizza" (should return nothing)
-
----
-
-## Exercise 5: Analyze Embedding Dimensions (Hard)
-
-**Task**: Understand what information different dimensions capture.
-
-**Steps**:
-1. Generate embeddings for these texts:
-```python
-from openai import OpenAI
+import time
 import os
+from openai import OpenAI
+from dotenv import load_dotenv
 
+load_dotenv()
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+model = 'text-embedding-3-small'
 
 texts = [
-    "User authentication failed",
-    "Login error",
-    "Database connection timeout",
-    "Pizza recipe ingredients"
+    "Password reset not working",
+    "Database connection timeout", 
+    "App crashes on startup",
+    "Payment declined error",
+    "Email notifications delayed",
 ]
+
+# Method 1: SLOW - One API call per text
+print("Method 1: Single API calls...")
+start = time.time()
+for text in texts:
+    response = client.embeddings.create(input=[text], model=model)
+time_slow = time.time() - start
+print(f"  Time: {time_slow:.2f} seconds")
+
+# Method 2: FAST - One API call for all texts
+print("\nMethod 2: Batch API call...")
+start = time.time()
+response = client.embeddings.create(input=texts, model=model)
+time_fast = time.time() - start
+print(f"  Time: {time_fast:.2f} seconds")
+
+# Compare
+print(f"\n✓ Batch is {time_slow/time_fast:.1f}x faster!")
+print(f"  Always batch your embeddings in production!")
 ```
 
-2. Calculate pairwise cosine similarities:
+**Answer**: How much faster is batching for 5 texts?
+
+---
+
+## Bonus Exercise: Similarity Matrix Heatmap (Challenge)
+
+**Task**: Create a visual heatmap showing how tickets relate to each other.
+
+**This is optional** - only try if you finished the other exercises.
+
 ```python
-from sklearn.metrics.pairwise import cosine_similarity
+import json
 import numpy as np
+import os
+from openai import OpenAI
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+from dotenv import load_dotenv
+
+load_dotenv()
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+# Load first 10 tickets
+with open('../../data/synthetic_tickets.json', 'r') as f:
+    tickets = json.load(f)[:10]
 
 # Generate embeddings
+texts = [t['title'] for t in tickets]
 response = client.embeddings.create(input=texts, model='text-embedding-3-small')
 embeddings = np.array([data.embedding for data in response.data])
 
-similarity_matrix = cosine_similarity(embeddings)
-print(similarity_matrix)
-```
+# Compute similarity matrix
+sim_matrix = cosine_similarity(embeddings)
 
-3. Create a heatmap:
-```python
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-plt.figure(figsize=(8, 6))
-sns.heatmap(similarity_matrix, annot=True, xticklabels=texts, 
-            yticklabels=texts, cmap='YlOrRd', vmin=0, vmax=1)
-plt.title('Similarity Matrix')
+# Create heatmap
+plt.figure(figsize=(10, 8))
+plt.imshow(sim_matrix, cmap='RdYlGn', vmin=0, vmax=1)
+plt.colorbar(label='Cosine Similarity')
+plt.xticks(range(10), [t['ticket_id'] for t in tickets], rotation=45, ha='right')
+plt.yticks(range(10), [t['ticket_id'] for t in tickets])
+plt.title('Ticket Similarity Matrix')
 plt.tight_layout()
+plt.savefig('similarity_heatmap.png')
 plt.show()
-```
-
-**Questions**:
-- Which texts are most similar? Does it match your intuition?
-- What's the similarity between "authentication failed" and "login error"?
-- How different is "Pizza recipe" from the technical queries?
-
----
-
-## Exercise 6: Build a Simple Search Interface (Challenge)
-
-**Task**: Create an interactive command-line search tool.
-
-**Requirements**:
-```python
-def main():
-    # Load tickets and generate embeddings once
-    tickets, embeddings, model = load_data()
-    
-    print("SupportDesk Search (type 'quit' to exit)")
-    while True:
-        query = input("\nEnter search query: ")
-        if query.lower() == 'quit':
-            break
-            
-        results = search_tickets(query, tickets, embeddings, model)
-        display_results(results)
-
-if __name__ == "__main__":
-    main()
-```
-
-**Bonus features**:
-- Color-code results by priority (High = red, Medium = yellow, etc.)
-- Show execution time for each search
-- Allow filtering by category
-- Display similarity score as a percentage
-
----
-
-## Hints & Tips
-
-### Debugging Similarity Scores
-If all scores are very low (<0.3):
-- Check that your embeddings are normalized
-- Verify the model loaded correctly
-- Ensure query and documents use the same model
-
-### Performance Optimization
-```python
-# Normalize embeddings once for faster cosine similarity
-from sklearn.preprocessing import normalize
-normalized_embeddings = normalize(embeddings)
-```
-
-### Visualization Tips
-```python
-# Create a similarity comparison chart for multiple queries
-import matplotlib.pyplot as plt
-
-queries = ["auth issue", "database timeout", "email problem"]
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-
-for idx, query in enumerate(queries):
-    # Get query embedding and similarities
-    query_emb = client.embeddings.create(input=[query], model=model).data[0].embedding
-    sims = cosine_similarity([query_emb], embeddings)[0]
-    top_5_indices = np.argsort(sims)[::-1][:5]
-    
-    # Plot bar chart
-    axes[idx].barh(range(5), [sims[i] for i in top_5_indices])
-    axes[idx].set_title(f'Query: "{query}"')
-    axes[idx].set_xlabel('Similarity Score')
-    axes[idx].set_yticks(range(5))
-    axes[idx].set_yticklabels([tickets[i]['ticket_id'] for i in top_5_indices])
-    
-plt.tight_layout()
-plt.show()
+print("✓ Saved as similarity_heatmap.png")
 ```
 
 ---
 
-## Solutions
+## Quick Reference
 
-Solutions are available in `solutions.py` (will be provided after the workshop).
+### Key Code Patterns
+```python
+# Generate embedding for one text
+response = client.embeddings.create(input=["your text"], model=model)
+embedding = response.data[0].embedding
 
-For now, try to solve these yourself! Learning happens through struggle. 💪
+# Generate embeddings for multiple texts (batch)
+response = client.embeddings.create(input=list_of_texts, model=model)
+embeddings = [data.embedding for data in response.data]
+
+# Calculate similarity
+from sklearn.metrics.pairwise import cosine_similarity
+similarities = cosine_similarity([query_embedding], all_embeddings)[0]
+
+# Get top K indices
+top_indices = np.argsort(similarities)[::-1][:top_k]
+```
 
 ---
 

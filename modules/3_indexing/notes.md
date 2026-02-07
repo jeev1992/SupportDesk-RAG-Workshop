@@ -224,6 +224,27 @@ response = query_engine.query("How do I reset my password?")
 - You have well-chunked documents
 - Queries are specific and focused
 
+**Real-World Use Cases:**
+```
+✓ Customer support ticket search
+  Query: "How do I fix login issues?"
+  Finds: "Authentication problems", "SSO failures"
+
+✓ FAQ and documentation search
+  Query: "What's the refund policy?"
+  Finds: Semantically similar policy documents
+
+✓ Chatbot knowledge base
+  Query: "My order hasn't arrived"
+  Finds: Shipping delay articles, tracking info
+
+✓ Research paper search
+  Query: "Machine learning for fraud detection"
+  Finds: Related papers even with different terminology
+
+Scale: Works well up to millions of documents
+```
+
 **Parameters:**
 ```python
 query_engine = index.as_query_engine(
@@ -235,24 +256,65 @@ query_engine = index.as_query_engine(
 
 ### 2. Summary Index
 
-**Description**: Store and search through document summaries/titles.
+**Description**: Store and search through full documents using LLM evaluation.
 
-**How It Works:**
+#### How It Works
+
+Unlike Vector Index which uses embeddings for similarity search, Summary Index stores full documents and uses the LLM to evaluate relevance:
+
+**Storage (No Chunking, No Embeddings):**
 ```
-1. Each document indexed as-is (no chunking)
-2. Query: LLM examines each document summary
-3. Returns most relevant full documents
-4. Linear scan through all documents
+[Doc 1: Full ticket text] → Stored as-is
+[Doc 2: Full ticket text] → Stored as-is
+[Doc 3: Full ticket text] → Stored as-is
+...all documents stored without modification
+```
+
+**Query Process (Linear Scan):**
+```
+Query: "How do I fix authentication issues?"
+
+Step 1: LLM reads Doc 1 → "Relevant? Yes"
+Step 2: LLM reads Doc 2 → "Relevant? No"
+Step 3: LLM reads Doc 3 → "Relevant? Yes"
+... continues for ALL documents
+
+Step N: Collect relevant docs → [Doc 1, Doc 3, ...]
+Step N+1: Synthesize answer from all relevant docs
+```
+
+**Why It's Slow:**
+```
+Complexity: O(n) - must check every document
+Each check = LLM call or LLM attention
+
+10 documents:   ~2 seconds
+100 documents:  ~20 seconds
+1000 documents: ~200 seconds ⚠️ Too slow!
+```
+
+**Response Modes:**
+```python
+# tree_summarize: Hierarchical summarization
+# - Summarizes groups of docs, then summarizes summaries
+# - Good for comprehensive answers from multiple sources
+query_engine = index.as_query_engine(response_mode="tree_summarize")
+
+# compact: Fits as much as possible in one LLM call
+query_engine = index.as_query_engine(response_mode="compact")
+
+# refine: Iteratively refines answer with each doc
+query_engine = index.as_query_engine(response_mode="refine")
 ```
 
 **Code:**
 ```python
 from llama_index.core import SummaryIndex
 
-# Create index
+# Create index (no embeddings, stores full docs)
 index = SummaryIndex.from_documents(docs)
 
-# Query
+# Query with tree_summarize for comprehensive answers
 query_engine = index.as_query_engine(
     response_mode="tree_summarize"
 )
@@ -278,6 +340,31 @@ response = query_engine.query("What are common auth issues?")
 - You have <50 documents
 - Documents are naturally scoped (tickets, emails)
 - Queries need broad context
+
+**Real-World Use Cases:**
+```
+✓ Executive report summarization
+  Query: "Summarize all customer complaints this week"
+  Dataset: 20 complaint emails
+  Returns: Comprehensive summary across all docs
+
+✓ Meeting notes analysis
+  Query: "What decisions were made about the budget?"
+  Dataset: 15 meeting transcripts
+  Returns: Full context from relevant meetings
+
+✓ Email thread understanding
+  Query: "What was the final agreement?"
+  Dataset: 30 emails in a negotiation thread
+  Returns: Complete thread context
+
+✓ Small knowledge base Q&A
+  Query: "What are our vacation policies?"
+  Dataset: 25 HR policy documents
+  Returns: Full policy documents, not fragments
+
+Scale: <50 documents (gets slow beyond that)
+```
 
 **Performance:**
 ```
@@ -634,6 +721,31 @@ response = query_engine.query("Explain force and electromagnetic induction")
 - Users ask broad then narrow down
 - Browsing is important
 
+**Real-World Use Cases:**
+```
+✓ Technical manuals and documentation
+  Query: "Explain section 4.2 of the compliance policy"
+  Structure: Manual → Chapters → Sections → Paragraphs
+  Traverses: Root → Compliance Chapter → Section 4 → 4.2
+
+✓ Legal document analysis
+  Query: "What are the liability clauses?"
+  Structure: Contract → Articles → Clauses → Sub-clauses
+  Traverses: Root → Liability Article → Specific clauses
+
+✓ Enterprise wiki search
+  Query: "How does the authentication system work?"
+  Structure: Wiki → Categories → Pages → Sections
+  Traverses: Root → Engineering → Auth System → Details
+
+✓ Textbook Q&A
+  Query: "What is Newton's Second Law?"
+  Structure: Textbook → Chapters → Sections → Paragraphs
+  Traverses: Root → Physics → Mechanics → Newton's Laws
+
+Scale: 1000+ documents with natural hierarchy
+```
+
 **Parameters:**
 ```python
 TreeIndex.from_documents(
@@ -660,11 +772,40 @@ Match: auth→authentication ✓, reset✓, problem→failures✓
 Score: 3/3 keywords matched
 ```
 
+#### How Keywords Are Extracted
+
+By default, LlamaIndex uses an **LLM call** to extract keywords:
+
+```python
+# LlamaIndex sends each document to the LLM with a prompt like:
+"Extract keywords from the following text. Return as comma-separated list:
+{document_text}"
+
+# LLM returns: "authentication, password, reset, login, SSO, error"
+```
+
+**What gets stored (inverted index):**
+```
+Keyword → [Document IDs]
+─────────────────────────
+"password"  → [ticket_1, ticket_5, ticket_12]
+"login"     → [ticket_1, ticket_3, ticket_8]
+"timeout"   → [ticket_7, ticket_15]
+"billing"   → [ticket_20, ticket_25]
+```
+
+**At query time:**
+1. Extract keywords from query (also via LLM or simple tokenization)
+2. Look up matching documents in the keyword table
+3. Return documents that share keywords with the query
+
+**Key difference from vector search**: No semantic understanding—"authentication" won't match "login" unless both keywords appear in the same document.
+
 **Code:**
 ```python
 from llama_index.core import KeywordTableIndex
 
-# Build keyword index
+# Build keyword index (uses LLM to extract keywords)
 index = KeywordTableIndex.from_documents(docs)
 
 # Query
@@ -696,6 +837,31 @@ response = query_engine.query("password authentication")
 - Want to avoid embedding costs
 - Offline operation needed
 
+**Real-World Use Cases:**
+```
+✓ Ticket/Issue ID lookup
+  Query: "TICK-001" or "JIRA-4532"
+  Returns: Exact ticket with that ID
+
+✓ Error code search
+  Query: "HTTP 503 error" or "NullPointerException"
+  Returns: Docs containing those exact error codes
+
+✓ Code search
+  Query: "function parseJSON" or "class UserAuthentication"
+  Returns: Files containing those function/class names
+
+✓ API endpoint lookup
+  Query: "/api/v2/users/profile"
+  Returns: Documentation for that exact endpoint
+
+✓ Product SKU search
+  Query: "SKU-78432-BLK"
+  Returns: Product catalog entry
+
+Scale: Any size, very fast, no LLM needed for retrieval
+```
+
 **Example Use Cases:**
 ```python
 # Good queries for keyword index:
@@ -712,6 +878,32 @@ response = query_engine.query("password authentication")
 
 **Description**: Combine multiple retrieval strategies for best results.
 
+#### Why Hybrid?
+
+Vector search and keyword search have complementary weaknesses:
+
+| Search Type | Catches | Misses |
+|-------------|---------|--------|
+| **Vector** | Semantic matches ("login" ↔ "authentication") | Exact terms (ticket IDs, error codes) |
+| **Keyword** | Exact matches ("TICK-001", "HTTP 503") | Synonyms, related concepts |
+
+**Example:**
+```
+Query: "authentication timeout error TICK-001"
+
+Vector Search finds:
+  - "Login session expired after inactivity" (semantic match)
+  - "SSO authentication failures" (semantic match)
+  - MISSES "TICK-001" (not semantically similar)
+
+Keyword Search finds:
+  - "TICK-001: Auth service error" (exact match)
+  - "timeout configuration issue" (keyword match)  
+  - MISSES "Login session expired" (no keyword overlap)
+
+Hybrid finds ALL of them → fewer missed results
+```
+
 **How It Works:**
 ```
 Query: "authentication timeout"
@@ -725,7 +917,7 @@ Fusion (RRF - Reciprocal Rank Fusion):
 score(doc) = 1/(rank_vector + k) + 1/(rank_keyword + k)
 
 Final Ranking:
-[Doc A: 0.032]  # High in both
+[Doc A: 0.032]  # High in both → most confident
 [Doc C: 0.029]  # Good in both
 [Doc B: 0.015]  # Vector only
 ```
@@ -780,6 +972,35 @@ hybrid_results = reciprocal_rank_fusion([vector_nodes, keyword_nodes])
 - Mixed query types (natural + keywords)
 - Users vary in query style
 - Worth the extra cost
+
+**Real-World Use Cases:**
+```
+✓ Production customer support
+  Query: "auth error TICK-001"
+  Vector finds: Related auth troubleshooting articles
+  Keyword finds: Exact ticket TICK-001
+  Combined: Both the specific ticket AND related solutions
+
+✓ Enterprise search
+  Query: "budget meeting Q3 2024"
+  Vector finds: Semantically related budget discussions
+  Keyword finds: Docs with exact "Q3 2024" mention
+  Combined: Comprehensive results across both
+
+✓ E-commerce product search
+  Query: "comfortable running shoes size 10"
+  Vector finds: Semantically similar athletic footwear
+  Keyword finds: Products with exact "size 10" in specs
+  Combined: Relevant products in the right size
+
+✓ Medical/Legal search (high stakes)
+  Query: "diabetes medication interactions"
+  Vector finds: Related drug interaction articles
+  Keyword finds: Exact drug names mentioned
+  Combined: Can't afford to miss relevant results
+
+Scale: Any size, but 2x retrieval cost
+```
 
 **Fusion Strategies:**
 

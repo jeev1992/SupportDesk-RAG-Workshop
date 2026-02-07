@@ -13,6 +13,7 @@ This demo teaches:
 
 import json
 import os
+import httpx
 from dotenv import load_dotenv
 from llama_index.core import VectorStoreIndex, SummaryIndex, TreeIndex, KeywordTableIndex, Document, Settings
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -21,14 +22,21 @@ from llama_index.llms.openai import OpenAI
 # Load environment variables
 load_dotenv()
 
-# Configure LlamaIndex settings
+# Set longer timeout for httpx (used by OpenAI client)
+os.environ["HTTPX_TIMEOUT"] = "300"  # 5 minutes
+
+# Configure LlamaIndex settings with increased timeout and retries
 Settings.embed_model = OpenAIEmbedding(
     model=os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
-    api_key=os.getenv('OPENAI_API_KEY')
+    api_key=os.getenv('OPENAI_API_KEY'),
+    timeout=120,  # 120 second timeout for embedding calls
+    max_retries=5  # Retry up to 5 times on failure
 )
 Settings.llm = OpenAI(
     model=os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'),
-    api_key=os.getenv('OPENAI_API_KEY')
+    api_key=os.getenv('OPENAI_API_KEY'),
+    timeout=300,  # 5 minute timeout for LLM calls (Tree/Keyword indexes need more time)
+    max_retries=5  # Retry up to 5 times on failure
 )
 
 print("="*80)
@@ -109,6 +117,34 @@ for i, node in enumerate(vector_response.source_nodes, 1):
 # ============================================================================
 # PART 2: Summary Index
 # ============================================================================
+#
+# How Summary Index Works:
+# ------------------------
+# Unlike Vector Index which uses embeddings for similarity search,
+# Summary Index stores full documents and uses the LLM to evaluate relevance.
+#
+# Storage:
+#   [Doc 1: Full ticket text] → No chunking, no embeddings
+#   [Doc 2: Full ticket text]
+#   [Doc 3: Full ticket text]
+#   ...all 50 tickets stored as-is
+#
+# Query Process (Linear Scan):
+#   1. LLM reads EACH document
+#   2. LLM decides: "Is this relevant to the query?"
+#   3. Relevant documents collected
+#   4. LLM synthesizes answer from all relevant docs
+#
+# Why it's slow:
+#   - O(n) complexity - must check every document
+#   - Each check = LLM call or LLM attention
+#   - 10 docs = 2 sec, 100 docs = 20 sec, 1000 docs = 200 sec!
+#
+# When to use:
+#   - Small collections (<50 documents)
+#   - Need full document context (not fragments)
+#   - High-level summarization queries
+#
 print("\n" + "="*80)
 print("PART 2: Summary Index")
 print("="*80)
@@ -119,11 +155,25 @@ print("✓ Returns full documents, not fragments")
 print("✗ Slower for large datasets (linear scan)")
 print("✗ No vector similarity search\n")
 
+# Create summary index:
+# - Stores full documents (no chunking)
+# - No embeddings generated
+# - Documents indexed as-is
 summary_index = SummaryIndex.from_documents(documents)
+
+# Query engine with tree_summarize:
+# - response_mode="tree_summarize" synthesizes answers hierarchically
+# - First summarizes groups of docs, then summarizes summaries
+# - Good for getting comprehensive answers from multiple sources
 summary_query_engine = summary_index.as_query_engine(response_mode="tree_summarize")
 
 print("✓ Created summary index")
 print(f"\nQuery: '{query}'")
+
+# Query execution:
+# 1. LLM examines each document for relevance
+# 2. Collects all relevant documents
+# 3. Uses tree_summarize to synthesize final answer
 summary_response = summary_query_engine.query(query)
 
 print("\nSummary Index Results:")
@@ -136,26 +186,70 @@ for i, node in enumerate(summary_response.source_nodes[:3], 1):
 # ============================================================================
 # PART 3: Tree Index (Hierarchical)
 # ============================================================================
+#
+# Visual of tree traversal for query "authentication issues after password reset":
+#
+#                     [Root: All 50 tickets summary]
+#                               │
+#             ┌─────────────────┼─────────────────┐
+#             ▼                 ▼                 ▼
+#     [Auth Issues]      [Performance]      [Billing]
+#          │                                     
+#     ┌────┼────┐                               
+#     ▼         ▼                               
+# [Ticket 1] [Ticket 5]  ← These become source_nodes
+#
+# The engine:
+# 1. Scores root children → Auth branch scores highest
+# 2. Drills into Auth branch
+# 3. Finds matching leaves (password reset tickets)
+# 4. Returns those as source_nodes
+#
 print("\n" + "="*80)
 print("PART 3: Tree Index (Hierarchical Retrieval)")
 print("="*80)
 
-print("\nTree indexing builds a hierarchical structure from leaf to root.")
+print("\n⚠️  NOTE: Tree Index makes many LLM calls during build.")
+print("    Using first 10 documents to reduce API calls.")
+print("    This may take 1-2 minutes. Please wait...\n")
+
+print("Tree indexing builds a hierarchical structure from leaf to root.")
 print("- Queries start at summary level, then drill down")
 print("✓ Preserves document context and relationships")
 print("✓ Efficient for large document collections")
 print("✗ More complex to build and maintain\n")
 
-tree_index = TreeIndex.from_documents(documents)
+# Use subset of documents to reduce LLM calls (Tree Index calls LLM for each node)
+tree_documents = documents
+print(f"Building Tree Index with {len(tree_documents)} documents...")
+
+# Build tree structure from documents:
+# - Leaf nodes: Each ticket becomes a leaf with full text
+# - Branch nodes: LLM generates summaries grouping related tickets
+# - Root node: Top-level summary of all content
+tree_index = TreeIndex.from_documents(tree_documents)
+
+# Create query engine with child_branch_factor=2:
+# - At each level, explore the top 2 most relevant branches
+# - Higher = broader search (more paths), Lower = focused search (single path)
 tree_query_engine = tree_index.as_query_engine(child_branch_factor=2)
 
 print("✓ Created tree index with hierarchical structure")
 print(f"\nQuery: '{query}'")
+
+# Query executes hierarchical retrieval:
+# 1. Start at root summary
+# 2. LLM scores each child branch for relevance
+# 3. Explore top 2 branches (child_branch_factor=2)
+# 4. Repeat until reaching leaf nodes
+# 5. Collect relevant leaves, synthesize answer
 tree_response = tree_query_engine.query(query)
 
 print("\nTree Index Results:")
+# tree_response.response = The synthesized answer from relevant leaves
 print(f"Answer: {tree_response.response}\n")
 print("Source Documents:")
+# tree_response.source_nodes = The leaf nodes used to generate the answer
 for i, node in enumerate(tree_response.source_nodes[:3], 1):
     print(f"\n{i}. {node.metadata.get('ticket_id', 'Unknown')}")
     print(f"   {node.text[:150]}...")
@@ -163,21 +257,61 @@ for i, node in enumerate(tree_response.source_nodes[:3], 1):
 # ============================================================================
 # PART 4: Keyword Table Index
 # ============================================================================
+#
+# How keywords are extracted:
+# ---------------------------
+# By default, LlamaIndex uses an LLM call to extract keywords:
+#   LLM prompt: "Extract keywords from the following text..."
+#   LLM returns: "authentication, password, reset, login, SSO, error"
+#
+# What gets stored (inverted index):
+#   Keyword → [Document IDs]
+#   ─────────────────────────
+#   "password"  → [ticket_1, ticket_5, ticket_12]
+#   "login"     → [ticket_1, ticket_3, ticket_8]
+#   "timeout"   → [ticket_7, ticket_15]
+#   "billing"   → [ticket_20, ticket_25]
+#
+# At query time:
+#   1. Extract keywords from query (also via LLM)
+#   2. Look up matching documents in the keyword table
+#   3. Return documents that share keywords with the query
+#
+# Key difference from vector search:
+#   No semantic understanding—"authentication" won't match "login"
+#   unless both keywords appear in the same document.
+#
 print("\n" + "="*80)
 print("PART 4: Keyword Table Index")
 print("="*80)
 
-print("\nKeyword indexing extracts keywords and uses exact/fuzzy matching.")
+print("\n⚠️  NOTE: Keyword Index makes LLM calls to extract keywords.")
+print("    Using first 10 documents to reduce API calls.")
+print("    This may take 1-2 minutes. Please wait...\n")
+
+print("Keyword indexing extracts keywords and uses exact/fuzzy matching.")
 print("✓ No embeddings needed - works without vector DB")
 print("✓ Good for keyword-specific queries")
 print("✗ No semantic understanding")
 print("✗ Misses synonyms and related concepts\n")
 
-keyword_index = KeywordTableIndex.from_documents(documents)
+# Use subset of documents to reduce LLM calls
+keyword_documents = documents
+print(f"Building Keyword Index with {len(keyword_documents)} documents...")
+
+# Build keyword index:
+# - LLM extracts keywords from each document
+# - Stores inverted index: keyword → [doc_ids]
+keyword_index = KeywordTableIndex.from_documents(keyword_documents)
 keyword_query_engine = keyword_index.as_query_engine()
 
 print("✓ Created keyword table index")
 print(f"\nQuery: '{query}'")
+
+# Query process:
+# 1. Extract keywords from query via LLM
+# 2. Look up documents containing those keywords
+# 3. Return matching documents
 keyword_response = keyword_query_engine.query(query)
 
 print("\nKeyword Index Results:")
@@ -190,6 +324,27 @@ for i, node in enumerate(keyword_response.source_nodes[:3], 1):
 # ============================================================================
 # PART 5: Hybrid Retrieval (Custom)
 # ============================================================================
+#
+# Why Hybrid Retrieval?
+# ---------------------
+# Vector search alone misses exact matches (ticket IDs, error codes)
+# Keyword search alone misses semantic matches ("login" ≠ "authentication")
+# Hybrid combines both → fewer missed results
+#
+# How it works:
+#   Query: "authentication timeout error"
+#
+#   Vector Search:              Keyword Search:
+#   [Doc A: 0.89] (login issue) [Doc C: 3 keywords match]
+#   [Doc B: 0.85] (auth error)  [Doc A: 2 keywords match]
+#   [Doc C: 0.75] (timeout)     [Doc E: 1 keyword match]
+#
+#   Fusion → Combine both, remove duplicates:
+#   [Doc A] - found by both (high confidence)
+#   [Doc B] - semantic match only
+#   [Doc C] - found by both (high confidence)
+#   [Doc E] - keyword match only
+#
 print("\n" + "="*80)
 print("PART 5: Hybrid Retrieval")
 print("="*80)
@@ -206,19 +361,31 @@ print("✗ Requires result fusion logic\n")
 print("✓ Using Vector + Keyword hybrid approach")
 print(f"\nQuery: '{query}'")
 
-# Get results from both indexes
+# Step 1: Retrieve from vector index (semantic similarity)
+# Finds documents that are semantically similar to the query
+# Example: "auth issues" → finds "login problems", "SSO failures"
 vector_nodes = vector_index.as_retriever(similarity_top_k=5).retrieve(query)
+
+# Step 2: Retrieve from keyword index (exact term matching)
+# Finds documents containing the exact query keywords
+# Example: "authentication" → finds docs with that exact word
 keyword_nodes = keyword_index.as_retriever().retrieve(query)
 
-# Simple fusion: combine and deduplicate
+# Step 3: Simple fusion - combine and deduplicate
+# More sophisticated approaches use Reciprocal Rank Fusion (RRF):
+#   score(doc) = Σ 1/(k + rank_i) across all retrievers
+# Here we use simple deduplication with vector results first (priority)
 seen_ids = set()
 hybrid_nodes = []
 
 for node in vector_nodes + keyword_nodes:
+    # Track by ticket_id to avoid duplicates
     node_id = node.metadata.get('ticket_id', node.node_id)
     if node_id not in seen_ids:
         seen_ids.add(node_id)
         hybrid_nodes.append(node)
+# Result: Union of both search methods, duplicates removed
+# Documents found by BOTH methods are likely most relevant
 
 print("\nHybrid Retrieval Results (Combined):")
 for i, node in enumerate(hybrid_nodes[:3], 1):

@@ -96,6 +96,33 @@ You've just built a complete, production-ready RAG system from scratch. Here's w
 
 ---
 
+### Module 6: Agentic RAG
+**Core Skills:**
+- Built **agents with custom tools** for flexible RAG
+- Implemented tool selection based on query intent
+- Created tools: SearchSimilar, GetByID, SearchByCategory, GetStatistics
+- Handled **multi-step reasoning** (agent chains multiple tools)
+- Added **conversation memory** for follow-up questions
+
+**Key Takeaway:** Agentic RAG lets the LLM decide WHEN and HOW to retrieve, enabling more flexible query patterns than hardcoded pipelines.
+
+**Next Level:**
+- Add **more specialized tools** (priority search, date filtering, ticket creation)
+- Implement **multi-agent systems** (retrieval agent, analysis agent, response agent)
+- Use **LangGraph** for complex agentic workflows
+- Add **guardrails** and safety checks for production
+
+**When to Use:**
+| Use Case | Direct RAG | Agentic RAG |
+|----------|-----------|-------------|
+| Simple Q&A | ✅ | ❌ |
+| Low latency needed | ✅ | ❌ |
+| Complex multi-step queries | ❌ | ✅ |
+| Multiple data sources | ❌ | ✅ |
+| Interactive conversation | ❌ | ✅ |
+
+---
+
 ## 🔥 Critical Technical Insights You Learned
 
 ### 1. **LCEL is the Modern LangChain Way**
@@ -311,6 +338,16 @@ Start with Recursive, optimize based on evaluation results.
 
 ---
 
+**Q: "When would you use Agentic RAG vs Direct RAG?"**
+
+**A:** 
+- **Direct RAG**: Simple Q&A, low latency needs, predictable behavior, cost-sensitive
+- **Agentic RAG**: Multi-step reasoning, multiple data sources, interactive conversations, flexible query patterns
+
+Agents add latency and cost (more LLM calls), but enable the LLM to DECIDE when/how to retrieve rather than always retrieving.
+
+---
+
 ### How to Demo Your Project
 
 **2-Minute Demo Script:**
@@ -363,11 +400,12 @@ Start with Recursive, optimize based on evaluation results.
 - Monitor: Latency, error rates, query patterns
 - Scale: Handle 100+ requests/second
 
-### Challenge 4: Multi-Agent RAG
-**Goal:** Build agent that uses RAG as a tool
-- Agent decides when to retrieve vs use existing knowledge
-- Multiple retrievers for different data sources
-- Tool-calling with LangChain agents
+### Challenge 4: Advanced Agentic RAG
+**Goal:** Extend Module 6 with complex agent workflows
+- Build multi-agent systems (retrieval + analysis + response agents)
+- Implement LangGraph for stateful workflows
+- Add external tools (web search, APIs, databases)
+- Create agent evaluation framework
 
 ---
 
@@ -377,7 +415,7 @@ Start with Recursive, optimize based on evaluation results.
 
 **This Week:**
 - [ ] Review workshop code and notes
-- [ ] Run all 5 modules again to solidify understanding
+- [ ] Run all 6 modules again to solidify understanding
 - [ ] Pick ONE challenge from Week 1 and implement it
 
 **This Month:**

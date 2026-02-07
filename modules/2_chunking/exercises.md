@@ -1,464 +1,415 @@
 # Hour 2 Exercises: Chunking & Vector Stores
 
-## Exercise 1: Experiment with Chunk Sizes (Easy)
+## Exercise 1: Change the Chunk Size (Easy)
 
-**Task**: Test different chunk sizes and observe how it affects retrieval.
+**Task**: Modify the demo to use larger chunks.
 
-**Steps**:
-1. Create vector stores with these chunk sizes: 100, 200, 500, 1000
-2. Search for "memory leak in background process"
-3. Compare the relevance of top-3 results
-
+**In the demo code, find this line** (around line 87):
 ```python
-chunk_sizes = [100, 200, 500, 1000]
+fixed_splitter = CharacterTextSplitter(
+    chunk_size=200,
+    chunk_overlap=20,
+    separator="\n"
+)
+```
+
+**Change it to**:
+```python
+fixed_splitter = CharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=50,
+    separator="\n"
+)
+```
+
+**Run the demo and observe**:
+- How many chunks are created now vs before?
+- Are the chunks more meaningful with larger size?
+
+---
+
+## Exercise 2: Change the Search Query (Easy)
+
+**Task**: Test the vector store with a different query.
+
+**In the demo code, find this line** (around line 253):
+```python
+query = "Authentication problems after password reset"
+```
+
+**Change it to**:
+```python
+query = "Database is timing out frequently"
+```
+
+**Run the demo and answer**:
+- Do the results match the new query?
+- What category do the matching tickets belong to?
+
+**Try these queries too**:
+- `"Email notifications not working"`
+- `"Payment processing fails"`
+- `"Mobile app crashes"`
+
+---
+
+## Exercise 3: Adjust Number of Results (Easy)
+
+**Task**: Get more search results by changing k.
+
+**In the demo code, find this line** (around line 260):
+```python
+k = 3  # Top-3 results
+```
+
+**Change it to**:
+```python
+k = 5  # Top-5 results
+```
+
+**Run and observe**: How do results #4 and #5 compare to the top 3?
+
+---
+
+## Exercise 4: Try Different Metadata Filters (Easy)
+
+**Task**: Search only in a specific category.
+
+**In the demo code, find this line** (around line 355):
+```python
+filtered_results = chroma_store.similarity_search(
+    query,
+    k=3,
+    filter={"category": "Authentication"}
+)
+```
+
+**Change the filter to search different categories**:
+```python
+# Try each of these:
+filter={"category": "Database"}
+filter={"category": "Performance"}
+filter={"category": "Email"}
+```
+
+**Run and observe**: Does filtering narrow results appropriately?
+
+---
+
+## Exercise 5: Compare Chunk Sizes (Medium)
+
+**Task**: See how chunk size affects the number of chunks created.
+
+**Copy and run this code** (creates a comparison table):
+```python
+import json
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r') as f:
+    tickets = json.load(f)
+
+# Create documents
+documents = []
+for ticket in tickets:
+    full_text = f"""
+Ticket ID: {ticket['ticket_id']}
+Title: {ticket['title']}
+Description: {ticket['description']}
+Resolution: {ticket['resolution']}
+    """.strip()
+    documents.append(Document(page_content=full_text))
+
+print(f"Total documents: {len(documents)}")
+print(f"Avg document length: {sum(len(d.page_content) for d in documents) // len(documents)} chars")
+print()
+
+# Compare chunk sizes
+chunk_sizes = [100, 200, 300, 500, 1000]
+
+print("Chunk Size | # Chunks | Avg Chunk Length")
+print("-" * 45)
+
 for size in chunk_sizes:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=size,
-        chunk_overlap=size//10
+        chunk_overlap=size // 10
     )
     chunks = splitter.split_documents(documents)
-    # Build store and search...
+    avg_len = sum(len(c.page_content) for c in chunks) // len(chunks) if chunks else 0
+    print(f"{size:>10} | {len(chunks):>8} | {avg_len:>16}")
 ```
 
-**Questions**:
-- Which chunk size gives the most relevant results?
-- What happens when chunks are too small? Too large?
-- How does chunk count vary with chunk size?
+**Answer**: 
+- Which chunk size creates the most chunks?
+- At what size do you get roughly 1 chunk per ticket?
 
 ---
 
-## Exercise 2: Metadata Filtering (Medium)
+## Exercise 6: Add Similarity Scores to Results (Medium)
 
-**Task**: Build a filtered search function that combines similarity search with metadata constraints.
+**Task**: Display similarity scores alongside search results.
 
-**Requirements**:
+**In the demo code, find the basic search** (around line 290):
 ```python
-def filtered_search(vector_store, query, category=None, priority=None, k=3):
-    """
-    Search with optional category and priority filters
-    
-    Args:
-        vector_store: Chroma vector store
-        query: Search query string
-        category: Filter by category (optional)
-        priority: Filter by priority (optional)
-        k: Number of results
-    
-    Returns:
-        List of matching documents
-    """
-    # TODO: Build filter dict
-    # TODO: Perform filtered search
-    # TODO: Return results
-    pass
+results = faiss_store.similarity_search(query, k=3)
+
+print(f"\nTop {len(results)} results:")
+for i, doc in enumerate(results, 1):
+    print(f"\n#{i}")
+    print(f"Ticket: {doc.metadata['ticket_id']}")
 ```
 
-**Test cases**:
+**Replace with this version that shows scores**:
 ```python
-# All authentication tickets
-filtered_search(store, "login failed", category="Authentication")
+# Use similarity_search_with_score instead
+results_with_scores = faiss_store.similarity_search_with_score(query, k=3)
 
-# High priority only
-filtered_search(store, "system down", priority="Critical")
-
-# Combine both filters
-filtered_search(store, "database issue", category="Database", priority="High")
+print(f"\nTop {len(results_with_scores)} results:")
+for i, (doc, score) in enumerate(results_with_scores, 1):
+    print(f"\n#{i} - Distance: {score:.4f}")
+    print(f"Ticket: {doc.metadata['ticket_id']}")
+    print(f"Category: {doc.metadata['category']}")
 ```
+
+**Note**: Lower distance = more similar (FAISS uses L2 distance by default)
 
 ---
 
-## Exercise 3: Save and Load Vector Stores (Medium)
+## Exercise 7: Filter by Multiple Conditions (Medium)
 
-**Task**: Implement functions to persist and load vector stores.
+**Task**: Search with combined filters (category AND priority).
 
-**FAISS Example**:
+**Copy and complete this code** (the filter line is already filled in for reference):
 ```python
-def save_faiss_store(store, path="./faiss_index"):
-    """Save FAISS store to disk"""
-    store.save_local(path)
-    print(f"Saved to {path}")
-
-def load_faiss_store(path="./faiss_index", embeddings=None):
-    """Load FAISS store from disk"""
-    store = LangChainFAISS.load_local(
-        path, 
-        embeddings,
-        allow_dangerous_deserialization=True
-    )
-    print(f"Loaded from {path}")
-    return store
-```
-
-**Steps**:
-1. Build a vector store
-2. Save it to disk
-3. Load it in a new Python session
-4. Verify search works
-
-**Why this matters**: In production, you don't want to rebuild embeddings every time!
-
----
-
-## Exercise 4: Compare FAISS vs Chroma Performance (Medium)
-
-**Task**: Benchmark search performance for both vector stores.
-
-**Metrics to measure**:
-- Index build time
-- Query latency
-- Memory usage
-- Disk storage size
-
-```python
-import time
+import json
 import os
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document
+from dotenv import load_dotenv
 
-def benchmark_store(store_builder, name, queries):
-    # Build store
-    start = time.time()
-    store = store_builder()
-    build_time = time.time() - start
-    
-    # Query latency
-    query_times = []
-    for query in queries:
-        start = time.time()
-        results = store.similarity_search(query, k=5)
-        query_times.append(time.time() - start)
-    
-    avg_query_time = sum(query_times) / len(query_times)
-    
-    print(f"\n{name}:")
-    print(f"  Build time: {build_time:.3f}s")
-    print(f"  Avg query time: {avg_query_time*1000:.2f}ms")
+load_dotenv()
+
+# Load and create documents
+with open('../../data/synthetic_tickets.json', 'r') as f:
+    tickets = json.load(f)
+
+documents = []
+for ticket in tickets:
+    doc = Document(
+        page_content=f"{ticket['title']}. {ticket['description']}",
+        metadata={
+            'ticket_id': ticket['ticket_id'],
+            'category': ticket['category'],
+            'priority': ticket['priority']
+        }
+    )
+    documents.append(doc)
+
+# Create vector store
+embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
+store = Chroma.from_documents(documents, embeddings, collection_name="exercise7")
+
+# Search with combined filter
+query = "system not working"
+
+# Chroma uses $and for multiple conditions
+combined_filter = {"$and": [{"category": "Authentication"}, {"priority": "High"}]}
+
+results = store.similarity_search(query, k=3, filter=combined_filter)
+
+print(f"Query: '{query}'")
+print(f"Filter: High priority + Authentication category")
+print(f"\nResults ({len(results)}):")
+for doc in results:
+    print(f"  [{doc.metadata['priority']}] [{doc.metadata['category']}] {doc.metadata['ticket_id']}")
 ```
 
-**Test queries**:
+**Try changing the filter to**:
+- Database + Critical priority
+- Performance + Medium priority
+
+---
+
+## Exercise 8: Save and Load Vector Store (Medium)
+
+**Task**: Persist a vector store and reload it.
+
+**Copy and run this complete code**:
 ```python
-test_queries = [
-    "authentication failed",
-    "database timeout",
-    "payment processing error",
-    "mobile app crash",
-    "email delivery failed"
+import json
+import os
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r') as f:
+    tickets = json.load(f)
+
+documents = [
+    Document(
+        page_content=f"{t['title']}. {t['description']}",
+        metadata={'ticket_id': t['ticket_id'], 'category': t['category']}
+    )
+    for t in tickets
 ]
+
+embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
+
+# Step 1: Build and save
+print("Building vector store...")
+store = FAISS.from_documents(documents, embeddings)
+store.save_local("./my_faiss_index")
+print("✓ Saved to ./my_faiss_index")
+
+# Step 2: Load it back
+print("\nLoading vector store...")
+loaded_store = FAISS.load_local(
+    "./my_faiss_index",
+    embeddings,
+    allow_dangerous_deserialization=True
+)
+print("✓ Loaded from disk")
+
+# Step 3: Verify it works
+query = "login problem"
+results = loaded_store.similarity_search(query, k=3)
+print(f"\nSearch results for '{query}':")
+for doc in results:
+    print(f"  {doc.metadata['ticket_id']}: {doc.page_content[:50]}...")
 ```
+
+**Why this matters**: In production, you don't rebuild embeddings every time!
 
 ---
 
-## Exercise 5: Implement Hybrid Search (Hard)
+## Bonus Exercise: Semantic vs Fixed Chunking (Challenge)
 
-**Task**: Combine keyword search (BM25) with semantic search for better results.
+**Task**: Compare how semantic chunking differs from fixed-size chunking.
 
-**Why**: Semantic search finds similar meanings, but sometimes exact keyword matches are important!
+**Note**: This is optional and takes longer to run.
 
-**Approach**:
 ```python
-from rank_bm25 import BM25Okapi
-import numpy as np
-
-def hybrid_search(query, documents, vector_store, alpha=0.5, k=5):
-    """
-    Hybrid search combining BM25 (keyword) and semantic search
-    
-    Args:
-        query: Search query
-        documents: List of document texts
-        vector_store: Vector store for semantic search
-        alpha: Weight for semantic search (1-alpha for BM25)
-        k: Number of results
-    
-    Returns:
-        Top-k documents ranked by hybrid score
-    """
-    # BM25 keyword search
-    tokenized_docs = [doc.lower().split() for doc in documents]
-    bm25 = BM25Okapi(tokenized_docs)
-    bm25_scores = bm25.get_scores(query.lower().split())
-    
-    # Semantic search
-    semantic_results = vector_store.similarity_search_with_score(query, k=len(documents))
-    semantic_scores = {doc.page_content: score for doc, score in semantic_results}
-    
-    # Normalize and combine scores
-    # TODO: Normalize BM25 scores (0-1)
-    # TODO: Normalize semantic scores (0-1)
-    # TODO: Compute hybrid score = alpha * semantic + (1-alpha) * bm25
-    # TODO: Return top-k
-    
-    pass
-```
-
-**Test**:
-- Try alpha=0.5 (equal weight)
-- Try alpha=0.8 (favor semantic)
-- Try alpha=0.2 (favor keywords)
-
-Compare results for queries like:
-- "TICK-005" (exact keyword)
-- "memory problems in worker" (semantic)
-
----
-
-## Exercise 6: Semantic Chunking Experiment (Medium)
-
-**Task**: Compare semantic chunking with traditional fixed-size chunking.
-
-**What is Semantic Chunking?**
-Semantic chunking splits text based on meaning rather than character count. It uses embeddings to detect topic shifts and keeps semantically related content together.
-
-**Steps**:
-```python
+import json
+import os
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document
+from dotenv import load_dotenv
 
-# Initialize embeddings
-embeddings = HuggingFaceEmbeddings(
-    model_name='all-MiniLM-L6-v2',
-    model_kwargs={'device': 'cpu'}
-)
+load_dotenv()
 
-# Create semantic chunker
-semantic_splitter = SemanticChunker(
-    embeddings=embeddings,
-    breakpoint_threshold_type="percentile"  # Try: "standard_deviation", "interquartile"
-)
+# Load a longer document for better comparison
+long_text = """
+User Authentication System Overview
 
-# Split documents
-semantic_chunks = semantic_splitter.split_documents(documents)
+The authentication system handles user login and session management. Users can 
+authenticate using username/password or single sign-on (SSO). The system supports
+OAuth 2.0 and SAML protocols for enterprise integration.
 
-# Compare with fixed-size chunking
-fixed_splitter = CharacterTextSplitter(chunk_size=300, chunk_overlap=30)
-fixed_chunks = fixed_splitter.split_documents(documents)
-```
+Password Security
 
-**Analysis Questions**:
-1. How many chunks does each strategy create?
-2. Do semantic chunks respect sentence/paragraph boundaries better?
-3. Which strategy keeps related information together?
-4. Try different `breakpoint_threshold_type` values - how do results change?
+All passwords are hashed using bcrypt with a cost factor of 12. Password policies
+require a minimum of 8 characters with at least one uppercase, lowercase, number,
+and special character. Passwords expire after 90 days for compliance.
 
-**Test Query**: Search for "database connection problems" in both stores and compare relevance.
+Session Management
 
----
+User sessions are stored in Redis with a 24-hour expiration. Each session includes
+the user ID, roles, and creation timestamp. Sessions can be invalidated through
+the admin panel or via API.
 
-## Exercise 7: Markdown and HTML Chunking (Medium)
+Two-Factor Authentication
 
-**Task**: Practice structure-aware chunking for documentation.
-
-**Part A: Markdown Chunking**
-```python
-from langchain.text_splitter import MarkdownHeaderTextSplitter
-
-# Create a markdown troubleshooting guide
-markdown_content = """
-# API Integration Guide
-
-## Authentication
-
-### OAuth 2.0 Setup
-Configure OAuth credentials in your app settings.
-Use the authorization code flow for server-side apps.
-
-### API Keys
-Generate API keys from the developer dashboard.
-Keep keys secure and rotate them regularly.
-
-## Rate Limiting
-
-### Request Limits
-Standard tier: 1000 requests/hour
-Premium tier: 10000 requests/hour
-
-### Handling 429 Errors
-Implement exponential backoff when rate limited.
+Users can enable 2FA using TOTP (Google Authenticator) or SMS verification. 
+Backup codes are generated for account recovery. Enterprise accounts require
+2FA for all users.
 """
 
-headers_to_split_on = [
-    ("#", "Header 1"),
-    ("##", "Header 2"),
-    ("###", "Header 3"),
-]
+doc = Document(page_content=long_text)
 
-md_splitter = MarkdownHeaderTextSplitter(
-    headers_to_split_on=headers_to_split_on,
-    strip_headers=False
-)
+# Fixed chunking
+fixed_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=30)
+fixed_chunks = fixed_splitter.split_documents([doc])
 
-md_chunks = md_splitter.split_text(markdown_content)
+# Semantic chunking
+embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
+semantic_splitter = SemanticChunker(embeddings, breakpoint_threshold_type="percentile")
+semantic_chunks = semantic_splitter.split_documents([doc])
 
-# Examine chunks and metadata
-for chunk in md_chunks:
-    print(f"Content: {chunk.page_content[:50]}...")
-    print(f"Metadata: {chunk.metadata}\n")
-```
+print("Fixed Chunking Results:")
+print(f"Number of chunks: {len(fixed_chunks)}")
+for i, chunk in enumerate(fixed_chunks, 1):
+    print(f"\nChunk {i} ({len(chunk.page_content)} chars):")
+    print(f"  {chunk.page_content[:80]}...")
 
-**Part B: HTML Chunking**
-```python
-from langchain.text_splitter import HTMLHeaderTextSplitter
-
-html_content = """
-<html>
-<body>
-    <h1>Security Best Practices</h1>
-    
-    <h2>Password Policies</h2>
-    <p>Require minimum 12 characters with mixed case and symbols.</p>
-    
-    <h3>Password Rotation</h3>
-    <p>Enforce password changes every 90 days for sensitive accounts.</p>
-    
-    <h2>Two-Factor Authentication</h2>
-    <p>Enable 2FA for all admin accounts.</p>
-</body>
-</html>
-"""
-
-headers_to_split_on = [
-    ("h1", "Header 1"),
-    ("h2", "Header 2"),
-    ("h3", "Header 3"),
-]
-
-html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-html_chunks = html_splitter.split_text(html_content)
-```
-
-**Why This Matters**: 
-- Documentation often has hierarchical structure
-- Preserving header context improves retrieval
-- Metadata helps with filtering and source attribution
-
-**Challenge**: Load your own Markdown/HTML documentation and create a searchable knowledge base!
-
----
-
-## Exercise 8: Build a Simple Vector Store CLI (Challenge)
-
-**Task**: Create an interactive tool to build, save, and search vector stores.
-
-**Features**:
-```
-SupportDesk Vector Store Manager
-================================
-1. Build new vector store
-2. Load existing vector store
-3. Search tickets
-4. Filter by metadata
-5. Show statistics
-6. Exit
-
-Choose option: _
-```
-
-**Implementation hints**:
-```python
-class VectorStoreManager:
-    def __init__(self):
-        self.store = None
-        self.embeddings = HuggingFaceEmbeddings(...)
-    
-    def build_store(self, documents, chunk_size=None):
-        """Build and save vector store"""
-        pass
-    
-    def load_store(self, path):
-        """Load existing vector store"""
-        pass
-    
-    def search(self, query, filters=None, k=5):
-        """Search with optional filters"""
-        pass
-    
-    def get_stats(self):
-        """Show store statistics"""
-        pass
+print("\n" + "="*60)
+print("\nSemantic Chunking Results:")
+print(f"Number of chunks: {len(semantic_chunks)}")
+for i, chunk in enumerate(semantic_chunks, 1):
+    print(f"\nChunk {i} ({len(chunk.page_content)} chars):")
+    print(f"  {chunk.page_content[:80]}...")
 ```
 
 ---
 
-## Exercise 9: Overlap Analysis (Advanced)
+## Quick Reference
 
-**Task**: Visualize how chunk overlap affects information preservation.
-
-**Steps**:
-1. Create chunks with different overlap amounts: 0, 10, 50, 100
-2. For each strategy, find chunks that reference a specific ticket
-3. Check if critical information spans chunk boundaries
-
+### Chunking
 ```python
-def analyze_overlap(text, chunk_size=200, overlaps=[0, 20, 50, 100]):
-    """Analyze how overlap affects chunking"""
-    for overlap in overlaps:
-        splitter = CharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=overlap
-        )
-        chunks = splitter.split_text(text)
-        
-        print(f"\nOverlap: {overlap}")
-        print(f"  Total chunks: {len(chunks)}")
-        
-        # Check for sentence splitting
-        broken_sentences = 0
-        for chunk in chunks:
-            if not chunk.strip().endswith('.'):
-                broken_sentences += 1
-        
-        print(f"  Broken sentences: {broken_sentences}")
+# Fixed size
+from langchain_text_splitters import CharacterTextSplitter
+splitter = CharacterTextSplitter(chunk_size=200, chunk_overlap=20)
+
+# Recursive (smarter)
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+
+# Apply to documents
+chunks = splitter.split_documents(documents)
 ```
 
----
-
-## Bonus: Production Optimizations
-
-### 1. Batch Embedding Generation
+### Vector Stores
 ```python
-# Instead of encoding one by one
-for doc in documents:
-    embedding = model.encode(doc)
-    
-# Encode all at once (much faster!)
-all_texts = [doc.page_content for doc in documents]
-embeddings = model.encode(all_texts, batch_size=32, show_progress_bar=True)
+# FAISS
+from langchain_community.vectorstores import FAISS
+store = FAISS.from_documents(documents, embeddings)
+store.save_local("./index")
+store = FAISS.load_local("./index", embeddings, allow_dangerous_deserialization=True)
+
+# Chroma
+from langchain_community.vectorstores import Chroma
+store = Chroma.from_documents(documents, embeddings, persist_directory="./chroma_db")
 ```
 
-### 2. Use FAISS GPU (if available)
+### Searching
 ```python
-import faiss
+# Basic search
+results = store.similarity_search(query, k=3)
 
-# CPU version
-index = faiss.IndexFlatL2(dimension)
+# With scores
+results = store.similarity_search_with_score(query, k=3)
 
-# GPU version (10x faster!)
-res = faiss.StandardGpuResources()
-index = faiss.GpuIndexFlatL2(res, dimension)
+# With filters (Chroma)
+results = store.similarity_search(query, k=3, filter={"category": "Authentication"})
+
+# MMR (diverse results)
+results = store.max_marginal_relevance_search(query, k=3)
 ```
-
-### 3. Approximate Search for Scale
-```python
-# Exact search (slow for millions of vectors)
-index = faiss.IndexFlatL2(dimension)
-
-# Approximate search with IVF (much faster!)
-quantizer = faiss.IndexFlatL2(dimension)
-index = faiss.IndexIVFFlat(quantizer, dimension, 100)  # 100 clusters
-index.train(embeddings)
-index.add(embeddings)
-```
-
----
-
-## Solutions
-
-Solutions provided after the workshop. Try to implement these yourself first!
 
 ---
 
 ## Next Steps
 
-Ready for **Hour 3: RAG Pipeline**? We'll combine everything you've learned to build a complete question-answering system!
+Ready for **Hour 3: Indexing Strategies**? We'll explore different ways to organize and retrieve documents!
 
 ---
 
-**Need help?** Ask the instructor or check the demo code for reference implementations.
+**Questions?** Ask the instructor or refer back to the demo code!

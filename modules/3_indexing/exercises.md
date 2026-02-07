@@ -1,313 +1,429 @@
 # Indexing Strategies Exercises
 
-## Exercise 1: Compare Index Query Performance (Easy)
+## Exercise 1: Change the Query (Easy)
 
-**Task**: Measure query latency for different LlamaIndex index types.
+**Task**: Modify the demo to search for a different type of issue.
 
-**Steps**:
+**In the demo code, find this line** (around line 79):
 ```python
-import time
-from llama_index.core import VectorStoreIndex, SummaryIndex, TreeIndex
+query = "How do I fix authentication issues after password reset?"
+```
 
-def benchmark_index(index, name, test_queries):
-    """Benchmark query performance for an index"""
-    query_engine = index.as_query_engine(similarity_top_k=3)
-    
-    query_times = []
-    for query in test_queries:
-        start = time.time()
-        response = query_engine.query(query)
-        query_times.append((time.time() - start) * 1000)
-    
-    avg_query_time = sum(query_times) / len(query_times)
-    
-    print(f"\n{name}:")
-    print(f"  Avg query time: {avg_query_time:.2f}ms")
-    print(f"  Queries tested: {len(test_queries)}")
+**Change it to**:
+```python
+query = "Database connection is timing out"
+```
 
-# Test different indexes
-test_queries = [
-    "How to fix authentication issues?",
-    "Database timeout problems",
-    "Mobile app crashes"
+**Run the demo and observe**:
+- How do the results differ between Vector, Summary, Tree, and Keyword indexes?
+- Which index type gives the most relevant answer?
+
+**Try these queries too**:
+- `"Email notifications not being delivered"`
+- `"Mobile app crashes on startup"`
+- `"Payment processing fails for international cards"`
+
+---
+
+## Exercise 2: Adjust the Number of Results (Easy)
+
+**Task**: Get more search results from the Vector Index.
+
+**In the demo code, find this line** (around line 92):
+```python
+vector_query_engine = vector_index.as_query_engine(similarity_top_k=3)
+```
+
+**Change it to**:
+```python
+vector_query_engine = vector_index.as_query_engine(similarity_top_k=5)
+```
+
+**Run and observe**: Does getting more source documents improve the answer quality?
+
+---
+
+## Exercise 3: Change the Tree Index Branch Factor (Easy)
+
+**Task**: Modify how many branches the Tree Index explores.
+
+**In the demo code, find this line** (around line 158):
+```python
+tree_query_engine = tree_index.as_query_engine(child_branch_factor=2)
+```
+
+**Try different values**:
+```python
+# Explore only 1 branch (more focused, might miss relevant info)
+tree_query_engine = tree_index.as_query_engine(child_branch_factor=1)
+
+# Explore 3 branches (broader search, slower)
+tree_query_engine = tree_index.as_query_engine(child_branch_factor=3)
+```
+
+**Run and observe**: 
+- How does `child_branch_factor=1` affect the answer?
+- Is `child_branch_factor=3` noticeably slower?
+
+---
+
+## Exercise 4: Test a Keyword-Specific Query (Easy)
+
+**Task**: See how Keyword Index handles exact term matching.
+
+**Add this code after the Keyword Index section** (around line 195):
+```python
+# Test keyword-specific query
+keyword_query = "TICK-001"
+print(f"\nKeyword-specific query: '{keyword_query}'")
+keyword_response = keyword_query_engine.query(keyword_query)
+print(f"Result: {keyword_response.response}")
+```
+
+**Run and observe**: Does the Keyword Index find the exact ticket ID?
+
+---
+
+## Exercise 5: Compare Index Types Side-by-Side (Medium)
+
+**Task**: Run the same query through all index types and compare.
+
+**Copy and run this code**:
+```python
+import json
+import os
+from dotenv import load_dotenv
+from llama_index.core import VectorStoreIndex, SummaryIndex, TreeIndex, KeywordTableIndex, Document, Settings
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+
+load_dotenv()
+
+# Configure LlamaIndex
+Settings.embed_model = OpenAIEmbedding(model='text-embedding-3-small')
+Settings.llm = OpenAI(model='gpt-4o-mini')
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+    tickets = json.load(f)
+
+documents = [
+    Document(
+        text=f"Title: {t['title']}\nDescription: {t['description']}\nResolution: {t['resolution']}",
+        metadata={'ticket_id': t['ticket_id'], 'category': t['category']}
+    )
+    for t in tickets
 ]
 
-# Build indexes
+print("Building indexes...")
+vector_idx = VectorStoreIndex.from_documents(documents)
+keyword_idx = KeywordTableIndex.from_documents(documents)
+print("✓ Indexes built\n")
+
+# Compare on 3 queries
+test_queries = [
+    "authentication login problem",
+    "database timeout error",
+    "TICK-005"
+]
+
+for query in test_queries:
+    print("=" * 60)
+    print(f"Query: '{query}'")
+    print("=" * 60)
+    
+    # Vector Index
+    vec_response = vector_idx.as_query_engine(similarity_top_k=3).query(query)
+    print(f"\nVector Index:")
+    print(f"  {str(vec_response)[:150]}...")
+    
+    # Keyword Index
+    kw_response = keyword_idx.as_query_engine().query(query)
+    print(f"\nKeyword Index:")
+    print(f"  {str(kw_response)[:150]}...")
+    
+    print()
+```
+
+**Answer**: Which index works best for "TICK-005" (exact match) vs "authentication login problem" (semantic)?
+
+---
+
+## Exercise 6: Save and Load an Index (Medium)
+
+**Task**: Persist a Vector Index to disk and reload it.
+
+**Copy and run this code**:
+```python
+import json
+import os
+from dotenv import load_dotenv
+from llama_index.core import VectorStoreIndex, Document, Settings, StorageContext, load_index_from_storage
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+
+load_dotenv()
+
+Settings.embed_model = OpenAIEmbedding(model='text-embedding-3-small')
+Settings.llm = OpenAI(model='gpt-4o-mini')
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+    tickets = json.load(f)
+
+documents = [
+    Document(
+        text=f"Title: {t['title']}\nDescription: {t['description']}",
+        metadata={'ticket_id': t['ticket_id'], 'category': t['category']}
+    )
+    for t in tickets
+]
+
+# Step 1: Build and save
+print("Building index...")
 vector_index = VectorStoreIndex.from_documents(documents)
+vector_index.storage_context.persist(persist_dir="./my_saved_index")
+print("✓ Saved to ./my_saved_index")
+
+# Step 2: Load from disk
+print("\nLoading index...")
+storage_context = StorageContext.from_defaults(persist_dir="./my_saved_index")
+loaded_index = load_index_from_storage(storage_context)
+print("✓ Loaded from disk")
+
+# Step 3: Test it works
+query = "login problem"
+response = loaded_index.as_query_engine().query(query)
+print(f"\nQuery: '{query}'")
+print(f"Result: {response}")
+```
+
+**Why this matters**: Building indexes is expensive (API calls). Persisting saves time and money!
+
+---
+
+## Exercise 7: Add Metadata Filtering (Medium)
+
+**Task**: Filter search results by category.
+
+**Copy and complete this code** (the filter is already filled in):
+```python
+import json
+import os
+from dotenv import load_dotenv
+from llama_index.core import VectorStoreIndex, Document, Settings
+from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+
+load_dotenv()
+
+Settings.embed_model = OpenAIEmbedding(model='text-embedding-3-small')
+Settings.llm = OpenAI(model='gpt-4o-mini')
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+    tickets = json.load(f)
+
+documents = [
+    Document(
+        text=f"Title: {t['title']}\nDescription: {t['description']}",
+        metadata={'ticket_id': t['ticket_id'], 'category': t['category'], 'priority': t['priority']}
+    )
+    for t in tickets
+]
+
+# Build index
+vector_index = VectorStoreIndex.from_documents(documents)
+
+# Query WITHOUT filter
+print("Without filter:")
+response = vector_index.as_query_engine(similarity_top_k=3).query("system problem")
+print(f"  {response}\n")
+
+# Query WITH category filter
+print("With 'Authentication' filter:")
+filters = MetadataFilters(filters=[
+    ExactMatchFilter(key="category", value="Authentication")
+])
+filtered_engine = vector_index.as_query_engine(similarity_top_k=3, filters=filters)
+filtered_response = filtered_engine.query("system problem")
+print(f"  {filtered_response}")
+```
+
+**Try changing the filter**:
+- `value="Database"`
+- `value="Performance"`
+
+---
+
+## Exercise 8: Benchmark Index Build Time (Medium)
+
+**Task**: Measure how long it takes to build each index type.
+
+**Copy and run this code**:
+```python
+import json
+import time
+import os
+from dotenv import load_dotenv
+from llama_index.core import VectorStoreIndex, SummaryIndex, KeywordTableIndex, Document, Settings
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+
+load_dotenv()
+
+Settings.embed_model = OpenAIEmbedding(model='text-embedding-3-small')
+Settings.llm = OpenAI(model='gpt-4o-mini')
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+    tickets = json.load(f)
+
+documents = [
+    Document(
+        text=f"Title: {t['title']}\nDescription: {t['description']}",
+        metadata={'ticket_id': t['ticket_id'], 'category': t['category']}
+    )
+    for t in tickets
+]
+
+print(f"Building indexes for {len(documents)} documents...\n")
+
+# Vector Index
+start = time.time()
+vector_index = VectorStoreIndex.from_documents(documents)
+vector_time = time.time() - start
+print(f"Vector Index: {vector_time:.2f}s")
+
+# Keyword Index
+start = time.time()
+keyword_index = KeywordTableIndex.from_documents(documents)
+keyword_time = time.time() - start
+print(f"Keyword Index: {keyword_time:.2f}s")
+
+# Summary Index (note: doesn't pre-build, so fast to create)
+start = time.time()
 summary_index = SummaryIndex.from_documents(documents)
+summary_time = time.time() - start
+print(f"Summary Index: {summary_time:.2f}s")
+
+print(f"\n→ Vector Index takes longer because it generates embeddings for all documents")
+print(f"→ Keyword Index uses LLM to extract keywords from each document")
+print(f"→ Summary Index is just storing documents (work happens at query time)")
+```
+
+---
+
+## Bonus Exercise: Simple Hybrid Search (Challenge)
+
+**Task**: Combine Vector and Keyword search results.
+
+**Copy and run this code**:
+```python
+import json
+import os
+from dotenv import load_dotenv
+from llama_index.core import VectorStoreIndex, KeywordTableIndex, Document, Settings
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+
+load_dotenv()
+
+Settings.embed_model = OpenAIEmbedding(model='text-embedding-3-small')
+Settings.llm = OpenAI(model='gpt-4o-mini')
+
+# Load data
+with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
+    tickets = json.load(f)
+
+documents = [
+    Document(
+        text=f"Title: {t['title']}\nDescription: {t['description']}",
+        metadata={'ticket_id': t['ticket_id'], 'category': t['category']}
+    )
+    for t in tickets
+]
+
+# Build both indexes
+vector_index = VectorStoreIndex.from_documents(documents)
+keyword_index = KeywordTableIndex.from_documents(documents)
+
+query = "authentication timeout error"
+
+# Get retrievers
+vector_retriever = vector_index.as_retriever(similarity_top_k=5)
+keyword_retriever = keyword_index.as_retriever()
+
+# Retrieve from both
+print(f"Query: '{query}'\n")
+
+print("Vector Results:")
+vector_nodes = vector_retriever.retrieve(query)
+for i, node in enumerate(vector_nodes[:3], 1):
+    print(f"  {i}. {node.node.metadata.get('ticket_id', 'N/A')}")
+
+print("\nKeyword Results:")
+keyword_nodes = keyword_retriever.retrieve(query)
+for i, node in enumerate(keyword_nodes[:3], 1):
+    print(f"  {i}. {node.node.metadata.get('ticket_id', 'N/A')}")
+
+# Simple hybrid: combine and deduplicate
+seen = set()
+hybrid_results = []
+for node in vector_nodes + keyword_nodes:
+    ticket_id = node.node.metadata.get('ticket_id')
+    if ticket_id and ticket_id not in seen:
+        seen.add(ticket_id)
+        hybrid_results.append(ticket_id)
+
+print(f"\nHybrid Results (combined): {hybrid_results[:5]}")
+```
+
+---
+
+## Quick Reference
+
+### Index Types
+```python
+from llama_index.core import VectorStoreIndex, SummaryIndex, TreeIndex, KeywordTableIndex
+
+# Vector: Semantic similarity search
+vector_index = VectorStoreIndex.from_documents(documents)
+
+# Summary: Reads all docs, good for high-level queries (slow for large datasets)
+summary_index = SummaryIndex.from_documents(documents)
+
+# Tree: Hierarchical traversal, good for large collections
 tree_index = TreeIndex.from_documents(documents)
 
-# Run benchmarks
-benchmark_index(vector_index, "Vector Index", test_queries)
-benchmark_index(summary_index, "Summary Index", test_queries)
-benchmark_index(tree_index, "Tree Index", test_queries)
+# Keyword: Exact term matching, no embeddings needed
+keyword_index = KeywordTableIndex.from_documents(documents)
 ```
 
-**Questions**:
-- Which index type is fastest for querying?
-- Which provides the most accurate results?
-- What's the trade-off between speed and quality?
-
----
-
-## Exercise 2: Customize Retrieval Parameters (Medium)
-
-**Task**: Experiment with different retrieval parameters for each index type.
-
-**For Vector Index**:
+### Query Engines
 ```python
-from llama_index.core import VectorStoreIndex
+# Basic query
+engine = index.as_query_engine()
+response = engine.query("your question")
 
-vector_index = VectorStoreIndex.from_documents(documents)
+# With parameters
+engine = index.as_query_engine(similarity_top_k=5)
 
-# Test different top_k values
-for k in [1, 3, 5, 10]:
-    query_engine = vector_index.as_query_engine(similarity_top_k=k)
-    response = query_engine.query("How to fix login issues?")
-    print(f"\nTop-{k} Results:")
-    print(response)
+# Tree Index with branch factor
+engine = tree_index.as_query_engine(child_branch_factor=2)
 ```
 
-**For Summary Index**:
+### Persistence
 ```python
-from llama_index.core import SummaryIndex
-from llama_index.core.response_synthesizers import ResponseMode
+# Save
+index.storage_context.persist(persist_dir="./storage")
 
-summary_index = SummaryIndex.from_documents(documents)
-
-# Test different response modes
-modes = [ResponseMode.REFINE, ResponseMode.COMPACT, ResponseMode.TREE_SUMMARIZE]
-
-for mode in modes:
-    query_engine = summary_index.as_query_engine(response_mode=mode)
-    response = query_engine.query("Summarize authentication issues")
-    print(f"\nMode: {mode}")
-    print(response)
-```
-
-**Questions**:
-- How does `similarity_top_k` affect answer quality?
-- Which response mode works best for summaries?
-- What's the latency trade-off?
-
----
-
-## Exercise 3: Implement Metadata Filtering (Medium)
-
-**Task**: Filter documents by category before retrieval using LlamaIndex metadata filters.
-
-**Implementation**:
-```python
-from llama_index.core import VectorStoreIndex
-from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
-
-# Build index with metadata
-vector_index = VectorStoreIndex.from_documents(documents)
-
-# Create query engine with metadata filter
-def filtered_query(query, category=None, priority=None):
-    filters = []
-    
-    if category:
-        filters.append(ExactMatchFilter(key="category", value=category))
-    
-    if priority:
-        filters.append(ExactMatchFilter(key="priority", value=priority))
-    
-    if filters:
-        query_engine = vector_index.as_query_engine(
-            similarity_top_k=3,
-            filters=MetadataFilters(filters=filters)
-        )
-    else:
-        query_engine = vector_index.as_query_engine(similarity_top_k=3)
-    
-    return query_engine.query(query)
-
-# Test filtered queries
-print("All authentication issues:")
-response = filtered_query("login failed", category="Authentication")
-print(response)
-
-print("\nCritical priority only:")
-response = filtered_query("system down", priority="Critical")
-print(response)
-```
-
-**Test cases**:
-- Filter by category only
-- Filter by priority only  
-- Combine multiple filters
-- Compare with unfiltered results
-
-**Questions**:
-- How does filtering affect relevance?
-- Does it reduce irrelevant results?
-- What happens when filters are too restrictive?
-
----
-
-## Exercise 4: Build a Custom Hybrid Retriever (Medium)
-
-**Task**: Implement your own hybrid retrieval combining vector and keyword search.
-
-**Implementation**:
-```python
-from llama_index.core import VectorStoreIndex, KeywordTableIndex
-import numpy as np
-
-class CustomHybridRetriever:
-    def __init__(self, documents):
-        # Build both indexes
-        self.vector_index = VectorStoreIndex.from_documents(documents)
-        self.keyword_index = KeywordTableIndex.from_documents(documents)
-        
-    def retrieve(self, query, top_k=5, vector_weight=0.7):
-        """
-        Hybrid retrieval with custom weighting
-        
-        Args:
-            query: Search query
-            top_k: Number of results
-            vector_weight: Weight for vector search (0-1)
-        """
-        keyword_weight = 1 - vector_weight
-        
-        # Get retrievers
-        vector_retriever = self.vector_index.as_retriever(similarity_top_k=top_k*2)
-        keyword_retriever = self.keyword_index.as_retriever(similarity_top_k=top_k*2)
-        
-        # Retrieve from both
-        vector_nodes = vector_retriever.retrieve(query)
-        keyword_nodes = keyword_retriever.retrieve(query)
-        
-        # Combine scores using RRF (Reciprocal Rank Fusion)
-        doc_scores = {}
-        
-        for rank, node in enumerate(vector_nodes, 1):
-            doc_id = node.node.metadata.get('ticket_id', node.node_id)
-            doc_scores[doc_id] = doc_scores.get(doc_id, 0) + (vector_weight / rank)
-        
-        for rank, node in enumerate(keyword_nodes, 1):
-            doc_id = node.node.metadata.get('ticket_id', node.node_id)
-            doc_scores[doc_id] = doc_scores.get(doc_id, 0) + (keyword_weight / rank)
-        
-        # Sort by combined score
-        sorted_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
-        
-        return sorted_docs[:top_k]
-
-# Test hybrid retriever
-hybrid = CustomHybridRetriever(documents)
-
-# Test with different weights
-for weight in [0.3, 0.5, 0.7, 1.0]:
-    print(f"\nVector weight: {weight}")
-    results = hybrid.retrieve("authentication failure", vector_weight=weight)
-    print(f"Top 3: {[doc_id for doc_id, score in results[:3]]}")
-```
-
-**Questions**:
-- How do different weights affect results?
-- When should you favor vector vs keyword?
-- Can you improve the RRF formula?---
-
-## Exercise 5: Index Persistence and Loading (Easy)
-
-**Task**: Practice saving and loading LlamaIndex indexes.
-
-**Steps**:
-```python
-from llama_index.core import VectorStoreIndex, StorageContext, load_index_from_storage
-
-# Build an index
-vector_index = VectorStoreIndex.from_documents(documents)
-
-# Save to disk
-vector_index.storage_context.persist(persist_dir="./storage")
-print("✓ Index saved to ./storage")
-
-# Load from disk
+# Load
+from llama_index.core import StorageContext, load_index_from_storage
 storage_context = StorageContext.from_defaults(persist_dir="./storage")
 loaded_index = load_index_from_storage(storage_context)
-print("✓ Index loaded from disk")
-
-# Verify it works
-query_engine = loaded_index.as_query_engine()
-response = query_engine.query("How to fix authentication issues?")
-print(f"\nQuery result: {response}")
 ```
-
-**Why this matters**: 
-- Building indexes is expensive
-- Production systems should load pre-built indexes
-- Much faster startup time
-- Saves API costs (no re-embedding)
-
-**Challenge**: Modify the demo to always check if an index exists before building a new one.
-
----
-
-## Exercise 6: Compare Index Types for Different Queries (Medium)
-
-**Task**: Test which index type works best for different query patterns.
-
-**Query Types**:
-```python
-query_types = {
-    'specific': [
-        "What is ticket TICK-001 about?",
-        "Show me TICK-015 details"
-    ],
-    'semantic': [
-        "How to fix login problems?",
-        "Database connection issues"
-    ],
-    'summary': [
-        "What are the most common authentication problems?",
-        "Summarize all database issues"
-    ]
-}
-
-# Test all indexes
-indexes = {
-    'vector': VectorStoreIndex.from_documents(documents),
-    'summary': SummaryIndex.from_documents(documents),
-    'tree': TreeIndex.from_documents(documents),
-    'keyword': KeywordTableIndex.from_documents(documents)
-}
-
-# Compare results
-for query_type, queries in query_types.items():
-    print(f"\n{'='*60}")
-    print(f"Query Type: {query_type.upper()}")
-    print('='*60)
-    
-    for query in queries:
-        print(f"\nQuery: {query}")
-        for name, index in indexes.items():
-            engine = index.as_query_engine(similarity_top_k=3)
-            response = engine.query(query)
-            print(f"  {name}: {str(response)[:100]}...")
-```
-
-**Analysis**:
-- Which index type is best for specific ticket lookups?
-- Which works best for semantic similarity?
-- Which is best for high-level summaries?
-- Can you create decision rules for index selection?
-
----
-
-## Solutions
-
-Solutions provided after the workshop. Try to implement these yourself first!
-
-These exercises will help you understand:
-- When to use each index type
-- How to optimize retrieval parameters
-- Building hybrid retrieval systems
-- Persisting and loading indexes efficiently
 
 ---
 
@@ -317,4 +433,4 @@ Ready for **Module 4: RAG Pipeline**? We'll combine indexing with LLM generation
 
 ---
 
-**Need help?** Ask the instructor or check the demo code for reference implementations.
+**Questions?** Ask the instructor or refer back to the demo code!

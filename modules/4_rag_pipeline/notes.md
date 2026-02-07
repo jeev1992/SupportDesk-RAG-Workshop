@@ -323,52 +323,46 @@ print(answer)
 
 **Learn more:** https://python.langchain.com/docs/expression_language/
 
-### Method 2: RetrievalQA (Legacy, Deprecated)
+### Method 2: Legacy Approaches (Deprecated)
 
-⚠️ **Note:** RetrievalQA is deprecated. Use LCEL instead for new projects.
+⚠️ **Note:** `RetrievalQA` and `ConversationalRetrievalChain` are deprecated in LangChain 0.3+. Use LCEL instead.
 
-```python
-# OLD WAY - Don't use in new code
-from langchain.chains import RetrievalQA
+**Chain Types (conceptual - now implemented via LCEL):**
+- `stuff`: Put all docs in one prompt (default LCEL pattern)
+- `map_reduce`: Summarize each doc, then combine (implement via loop + combine)
+- `refine`: Iteratively refine answer with each doc (implement via reduce)
+- `map_rerank`: Score each doc's answer, return best
 
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",  # Put all docs in context
-    retriever=retriever,
-    return_source_documents=True
-)
-
-result = qa_chain({"query": "What causes authentication failures?"})
-print(result['result'])  # Answer
-print(result['source_documents'])  # Source chunks
-```
-
-**Chain Types (for reference):**
-- `stuff`: Put all docs in one prompt (simple, limited by context)
-- `map_reduce`: Summarize each doc, then combine (slower, works for many docs)
-- `refine`: Iteratively refine answer with each doc (best quality, slowest)
-- `map_rerank`: Score each doc's answer, return best (good for diverse results)
-
-### Method 3: ConversationalRetrievalChain (Chat with Memory)
+### Method 3: Conversation with History (Modern LCEL)
 
 ```python
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-memory = ConversationBufferMemory(
-    memory_key="chat_history",
-    return_messages=True
-)
+# Store chat history
+chat_history = []
 
-conversational_chain = ConversationalRetrievalChain.from_llm(
-    llm=llm,
-    retriever=retriever,
-    memory=memory
-)
+# Create conversational prompt
+conv_prompt = ChatPromptTemplate.from_messages([
+    ("system", "Answer using the context: {context}"),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{question}")
+])
+
+conv_chain = conv_prompt | llm | StrOutputParser()
+
+def ask_with_history(question):
+    context = format_docs(retriever.invoke(question))
+    response = conv_chain.invoke({
+        "context": context, "history": chat_history, "question": question
+    })
+    chat_history.append(HumanMessage(content=question))
+    chat_history.append(AIMessage(content=response))
+    return response
 
 # Multi-turn conversation
-conversational_chain("What's ticket TICK-001?")
-conversational_chain("How was it resolved?")  # Remembers context
+ask_with_history("What's ticket TICK-001?")
+ask_with_history("How was it resolved?")  # Remembers context
 ```
 
 ## Prompt Engineering for RAG
@@ -611,15 +605,17 @@ def detect_hallucination(answer, context):
     return result
 ```
 
-## Response Modes
+## Response Modes (LCEL Implementation)
 
-### Stuff (Simple)
+### Stuff (Simple) - Default LCEL Pattern
 
 ```python
-chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever
+# All documents concatenated into one prompt
+stuff_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
 )
 ```
 
@@ -627,14 +623,25 @@ chain = RetrievalQA.from_chain_type(
 **Best for:** Few documents, short content
 **Limitation:** Context window size
 
-### Map-Reduce
+### Map-Reduce (LCEL)
 
 ```python
-chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="map_reduce",
-    retriever=retriever
+# Process each document separately, then combine
+docs = retriever.invoke(query)
+
+# Map: Answer for each doc
+individual_answers = []
+for doc in docs:
+    single_prompt = ChatPromptTemplate.from_template("Summarize: {doc}")
+    chain = single_prompt | llm | StrOutputParser()
+    individual_answers.append(chain.invoke({"doc": doc.page_content}))
+
+# Reduce: Combine answers
+combine_prompt = ChatPromptTemplate.from_template(
+    "Combine these summaries to answer: {question}\n\n{summaries}"
 )
+final = combine_prompt | llm | StrOutputParser()
+result = final.invoke({"question": query, "summaries": "\n".join(individual_answers)})
 ```
 
 **How it works:**
@@ -644,14 +651,19 @@ chain = RetrievalQA.from_chain_type(
 **Best for:** Many documents, need comprehensive answer
 **Trade-off:** Multiple LLM calls = slower + more expensive
 
-### Refine
+### Refine (LCEL)
 
 ```python
-chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="refine",
-    retriever=retriever
+# Iteratively refine answer with each doc
+docs = retriever.invoke(query)
+refine_prompt = ChatPromptTemplate.from_template(
+    "Current answer: {answer}\n\nRefine using: {doc}\n\nQuestion: {question}"
 )
+refine_chain = refine_prompt | llm | StrOutputParser()
+
+answer = ""  # Start empty
+for doc in docs:
+    answer = refine_chain.invoke({"answer": answer, "doc": doc.page_content, "question": query})
 ```
 
 **How it works:**
@@ -662,14 +674,30 @@ chain = RetrievalQA.from_chain_type(
 **Best for:** Highest quality answers
 **Trade-off:** Slowest method
 
-### Map-Rerank
+### Map-Rerank (LCEL)
 
 ```python
-chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="map_rerank",
-    retriever=retriever
+# Score each answer and return best
+from langchain_core.output_parsers import JsonOutputParser
+
+docs = retriever.invoke(query)
+
+rank_prompt = ChatPromptTemplate.from_template(
+    """Answer the question using ONLY this document.
+    Document: {doc}
+    Question: {question}
+    
+    Return JSON: {{"answer": "...", "confidence": 0-100}}"""
 )
+rank_chain = rank_prompt | llm | JsonOutputParser()
+
+results = []
+for doc in docs:
+    result = rank_chain.invoke({"doc": doc.page_content, "question": query})
+    results.append(result)
+
+# Return highest confidence answer
+best = max(results, key=lambda x: x.get("confidence", 0))
 ```
 
 **How it works:**
@@ -684,18 +712,21 @@ chain = RetrievalQA.from_chain_type(
 ```python
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
-llm = ChatOpenAI(
+streaming_llm = ChatOpenAI(
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()]
 )
 
-chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=retriever
+streaming_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | streaming_llm
+    | StrOutputParser()
 )
 
 # Streams to console as generated
-chain("What causes performance issues?")
+streaming_chain.invoke("What causes performance issues?")
+```
 ```
 
 **Custom streaming:**

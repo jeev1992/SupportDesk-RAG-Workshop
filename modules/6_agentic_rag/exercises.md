@@ -1,307 +1,358 @@
 # Module 6 Exercises: Agentic RAG
 
-Test your understanding of agentic RAG concepts with these hands-on exercises.
+Complete these exercises after studying `demo.py`. Solutions are in `solutions.py`.
 
 ---
 
-## Exercise 1: Basic Agent Interaction ⭐
+## Easy Exercises (Start Here!)
 
-**Goal:** Run the demo and observe agent behavior
+### Exercise 1: Run the Demo and Observe
 
-**Tasks:**
-1. Run the demo: `python demo.py`
-2. Watch the agent's reasoning process (verbose output)
-3. Answer these questions:
-   - Which tool did the agent select for each query?
-   - How many reasoning steps did each query take?
-   - Did the agent ever use multiple tools for one query?
+**Task**: Run the demo and understand agent behavior.
 
-**Expected Outcome:** Understanding of how agents select and use tools
-
----
-
-## Exercise 2: Add a New Tool ⭐⭐
-
-**Goal:** Create and integrate a new tool
-
-**Task:** Add a `SearchByPriority` tool that filters tickets by priority level.
-
-**Steps:**
-1. Open `tools.py`
-2. Add a new method `search_by_priority(self, priority: str) -> str`
-3. Add the tool to the `get_tools()` method
-4. Test with queries like "Show me all critical priority tickets"
-
-**Hints:**
-```python
-def search_by_priority(self, priority: str) -> str:
-    """Find tickets by priority level (Critical, High, Medium, Low)"""
-    # Your code here
-    pass
+```bash
+python demo.py
 ```
 
-**Expected Outcome:** A working tool that filters by priority
+**Observe and answer**:
+1. Which tool did the agent select for "How do I fix authentication problems?"
+2. Which tool did the agent select for "Show me ticket TICK-005"?
+3. How many reasoning steps did each query take?
+
+**Key insight**: The agent decides which tool to use based on the query!
 
 ---
 
-## Exercise 3: Improve Tool Descriptions ⭐⭐
+### Exercise 2: Test Different Queries
 
-**Goal:** Make the agent choose tools more accurately
+**Task**: Run queries and predict which tool will be used.
 
-**Current Problem:** The agent sometimes selects the wrong tool for certain queries.
-
-**Task:** Improve the tool descriptions in `tools.py` to be more specific.
-
-**Test Queries:**
-- "What database problems have we seen?" (Should use SearchByCategory)
-- "Show ticket TICK-010" (Should use GetTicketByID)
-- "How many tickets do we have?" (Should use GetTicketStatistics)
-
-**Questions:**
-- What keywords help the agent choose correctly?
-- How detailed should descriptions be?
-
-**Expected Outcome:** More accurate tool selection
-
----
-
-## Exercise 4: Custom Agent Prompt ⭐⭐
-
-**Goal:** Modify agent behavior through prompt engineering
-
-**Task:** Modify the system prompt in `demo.py` to make the agent:
-1. Always mention which tool it used in the final answer
-2. Suggest related tickets when answering
-3. Ask clarifying questions when the query is ambiguous
-
-**Test Query:** "Issues with users logging in"
-
-**Expected Outcome:** Agent behavior changes based on your prompt
-
----
-
-## Exercise 5: Conversation History ⭐⭐⭐
-
-**Goal:** Build a multi-turn conversation agent
-
-**Task:** Create a script that allows interactive conversation with the agent.
-
-**Requirements:**
-- Accept user input in a loop
-- Maintain conversation history
-- Allow exit with "quit" or "exit"
-- Display agent's tool usage
-
-**Starter Code:**
+**Add these queries to demo.py (after PART 2) and run:**
 ```python
-from demo import conversational_agent
+# Test query - prediction: which tool?
+test_query = "Show me all database-related tickets"
+response = run_agent(test_query)
+print(response)
+```
 
+**Test these queries** (predict the tool before running):
+
+| Query | Predicted Tool | Actual Tool |
+|-------|---------------|-------------|
+| "What issues have we seen with payments?" | ? | ? |
+| "Get ticket TICK-003" | ? | ? |
+| "How many tickets are in each category?" | ? | ? |
+| "How to resolve mobile app crashes" | ? | ? |
+
+---
+
+### Exercise 3: Improve Tool Descriptions
+
+**Task**: Make tool selection more accurate by improving descriptions.
+
+**In tools.py, find the `get_tools()` method and improve descriptions:**
+
+```python
+Tool(
+    name="SearchSimilarTickets",
+    # BEFORE: Generic description
+    # description="Search for similar tickets"
+    
+    # AFTER: More specific
+    description="""Use this for troubleshooting questions like "how to fix", 
+    "why is X happening", or "similar issues to Y". 
+    Searches semantically - finds related tickets even if words don't match exactly."""
+)
+```
+
+**Test these queries after improving descriptions**:
+- "What database problems have we seen?" (Should use SearchByCategory)
+- "Users can't log in" (Should use SearchSimilarTickets)
+- "Get TICK-010 details" (Should use GetTicketByID)
+
+---
+
+### Exercise 4: Add a Priority Search Tool
+
+**Task**: Add a new tool that filters tickets by priority.
+
+**In tools.py, add this method to the SupportTicketTools class:**
+```python
+def search_by_priority(self, priority: str) -> str:
+    """Find all tickets with a specific priority level."""
+    priority = priority.strip().capitalize()
+    matching = [t for t in self.tickets if t['priority'].lower() == priority.lower()]
+    
+    if not matching:
+        available = list(set(t['priority'] for t in self.tickets))
+        return f"No tickets with priority '{priority}'. Available: {', '.join(available)}"
+    
+    output = f"Found {len(matching)} tickets with {priority} priority:\n\n"
+    for ticket in matching:
+        output += f"• [{ticket['ticket_id']}] {ticket['title']} ({ticket['category']})\n"
+    
+    return output
+```
+
+**Then add it to get_tools():**
+```python
+Tool(
+    name="SearchByPriority",
+    func=self.search_by_priority,
+    description="""Find all tickets with a specific priority level.
+    Input should be: Critical, High, Medium, or Low.
+    Use when user asks about urgent/important issues or priority levels."""
+)
+```
+
+**Test with**: "Show me all critical priority tickets"
+
+---
+
+## Medium Exercises
+
+### Exercise 5: Multi-Step Queries
+
+**Task**: Write queries that require the agent to use multiple tools.
+
+**Try these multi-step queries:**
+```python
+query = "How many payment tickets do we have and what was the resolution for the most recent one?"
+response = run_agent(query)
+```
+
+**Queries to test**:
+1. "Find all high priority tickets and show details of the first one"
+2. "Compare the resolution for TICK-001 and TICK-005"
+3. "What Authentication issues do we have? Give me details on each one."
+
+**Questions**:
+- Does the agent decompose the query correctly?
+- In what order does it use tools?
+- Does it synthesize information from multiple tools?
+
+---
+
+### Exercise 6: Custom Agent Prompt
+
+**Task**: Modify the system prompt to change agent behavior.
+
+**In demo.py, find the system message in `run_agent()` and modify it:**
+
+```python
+SystemMessage(content="""You are an expert support desk assistant.
+
+ALWAYS follow these rules:
+1. State which tool you're using before searching
+2. If the query is ambiguous, ask a clarifying question FIRST
+3. When providing solutions, rate your confidence (High/Medium/Low)
+4. Suggest related tickets the user might want to explore
+""")
+```
+
+**Test with**: "Issues with users logging in"
+
+**Expected changes**:
+- Agent should mention tool usage
+- Should suggest related topics
+- Should indicate confidence level
+
+---
+
+### Exercise 7: Interactive Conversation Loop
+
+**Task**: Build an interactive chat with the agent.
+
+**Create a new file `chat.py`:**
+```python
+from demo import run_agent
+
+print("=" * 60)
 print("Support Assistant (type 'quit' to exit)")
+print("=" * 60)
+
+while True:
+    user_input = input("\nYou: ").strip()
+    
+    if user_input.lower() in ['quit', 'exit', 'q']:
+        print("Goodbye!")
+        break
+    
+    if not user_input:
+        continue
+    
+    print("\nThinking...")
+    response = run_agent(user_input)
+    print(f"\nAssistant: {response}")
+```
+
+**Test conversation**:
+1. "What authentication issues have we seen?"
+2. "Tell me more about TICK-001"
+3. "What was the resolution?"
+
+---
+
+### Exercise 8: Error Handling
+
+**Task**: Make tools more robust with error handling.
+
+**Update tools to handle edge cases:**
+```python
+def get_ticket_by_id(self, ticket_id: str) -> str:
+    """Retrieve a specific ticket by its ID."""
+    # Handle edge cases
+    if not ticket_id or not ticket_id.strip():
+        return "Error: Please provide a ticket ID (e.g., TICK-001)"
+    
+    ticket_id = ticket_id.upper().strip()
+    
+    # Check format
+    if not ticket_id.startswith("TICK-"):
+        return f"Error: Invalid format. Ticket IDs look like TICK-001, TICK-002, etc."
+    
+    # ... rest of the function
+```
+
+**Test with**:
+- "Get ticket XYZ123" (invalid format)
+- "Get ticket TICK-999" (not found)
+- "Get ticket" (empty input)
+
+---
+
+## Bonus Challenges
+
+### Bonus: Conversation with Memory
+
+**Task**: Build a conversational agent that remembers context.
+
+**Create `conversational_chat.py`:**
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from tools import SupportTicketTools
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Setup
+llm = ChatOpenAI(model=os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'), temperature=0)
+tool_manager = SupportTicketTools()
+tools = tool_manager.get_tools()
+
+# ... bind tools (copy from demo.py)
+
+# Maintain conversation history across turns
+conversation_history = []
+
+def chat(user_message):
+    """Process a message with full conversation memory."""
+    global conversation_history
+    
+    # Add user message to history
+    conversation_history.append(HumanMessage(content=user_message))
+    
+    # Create full message list with system prompt
+    messages = [
+        SystemMessage(content="You are a support assistant with memory of our conversation.")
+    ] + conversation_history
+    
+    # Run agent loop with tools...
+    # Add assistant response to history
+    # Return response
+
+# Interactive loop
+print("Conversational Support Agent")
 while True:
     user_input = input("\nYou: ").strip()
     if user_input.lower() in ['quit', 'exit']:
         break
     
-    # Your code here
-    pass
+    response = chat(user_input)
+    print(f"\nAssistant: {response}")
 ```
 
-**Expected Outcome:** Interactive chat with the agent
+**Test this conversation flow**:
+1. User: "What issues have we had with databases?"
+2. User: "What was the ticket ID?"  ← Should remember context
+3. User: "How was it resolved?"  ← Should still remember
 
 ---
 
-## Exercise 6: Multi-Step Query ⭐⭐⭐
+### Bonus: Agent Evaluation
 
-**Goal:** Test agent's multi-step reasoning
+**Task**: Measure agent performance on a test set.
 
-**Task:** Write queries that require the agent to use multiple tools.
-
-**Example Queries:**
-1. "How many payment tickets do we have and what was the most recent one?"
-2. "Find all high priority tickets and tell me which categories they fall into"
-3. "Compare the resolution for TICK-001 and TICK-005"
-
-**Questions:**
-- Does the agent decompose the query correctly?
-- What order does it use tools?
-- Does it synthesize information well?
-
-**Expected Outcome:** Understanding of multi-step reasoning
-
----
-
-## Exercise 7: Add Ticket Creation Tool ⭐⭐⭐
-
-**Goal:** Create a tool that modifies data (not just reads)
-
-**Task:** Add a tool that creates a new support ticket.
-
-**Requirements:**
-- Accept: title, description, category, priority
-- Generate a new ticket ID
-- Add to the tickets list (in memory or file)
-- Return confirmation with the ticket ID
-
-**Hint:**
 ```python
-def create_ticket(self, ticket_info: str) -> str:
-    """
-    Create a new support ticket.
-    Input should be in format: 
-    'title: [title], description: [desc], category: [cat], priority: [pri]'
-    """
-    # Parse the input
-    # Create ticket
-    # Add to list
-    # Return confirmation
-    pass
-```
-
-**Test Query:** "Create a new ticket: title: Test Issue, description: Testing agent, category: Other, priority: Low"
-
-**Expected Outcome:** Functioning ticket creation
-
----
-
-## Exercise 8: Error Handling ⭐⭐⭐
-
-**Goal:** Make tools more robust
-
-**Task:** Add error handling to tools for edge cases.
-
-**Test Cases:**
-1. Invalid ticket ID: "Get ticket TICK-999"
-2. Invalid category: "Show me XYZ category tickets"
-3. Malformed input: "Search for ;;;"
-
-**Requirements:**
-- Tools should never crash
-- Return helpful error messages
-- Suggest corrections when possible
-
-**Expected Outcome:** Graceful error handling
-
----
-
-## Exercise 9: Streaming Agent Responses ⭐⭐⭐⭐
-
-**Goal:** Show agent thinking in real-time
-
-**Task:** Implement streaming for better UX.
-
-**Requirements:**
-- Stream agent's intermediate steps
-- Show tool calls as they happen
-- Display final answer progressively
-
-**Hint:** Look into `agent_executor.stream()` or `astream_events()`
-
-**Expected Outcome:** Real-time visibility into agent process
-
----
-
-## Exercise 10: Agent Evaluation ⭐⭐⭐⭐
-
-**Goal:** Measure agent performance
-
-**Task:** Create an evaluation script that tests the agent on a set of queries.
-
-**Metrics to Track:**
-1. Tool selection accuracy (did it choose the right tool?)
-2. Number of steps taken
-3. Response quality (manual or LLM-based grading)
-4. Token usage
-5. Latency
-
-**Test Set:**
-```python
-test_queries = [
-    ("How do I fix login issues?", "SearchSimilarTickets"),
-    ("Show ticket TICK-001", "GetTicketByID"),
-    ("How many tickets do we have?", "GetTicketStatistics"),
-    # Add more...
+test_cases = [
+    {
+        "query": "How do I fix login issues?",
+        "expected_tool": "SearchSimilarTickets",
+        "should_contain": ["authentication", "TICK"]
+    },
+    {
+        "query": "Show ticket TICK-001",
+        "expected_tool": "GetTicketByID",
+        "should_contain": ["TICK-001"]
+    },
+    {
+        "query": "How many tickets are there?",
+        "expected_tool": "GetTicketStatistics",
+        "should_contain": ["total", "category"]
+    }
 ]
+
+def evaluate_agent(test_cases):
+    results = []
+    for test in test_cases:
+        # Run agent, track which tool was called
+        # Check if expected_tool was used
+        # Check if response contains expected keywords
+        pass
+    
+    return results
 ```
 
-**Expected Outcome:** Quantitative agent performance data
+---
+
+## Key Concepts Summary
+
+| Concept | Description |
+|---------|-------------|
+| **Agent** | LLM that decides which tools to use based on the query |
+| **Tool** | Function the agent can call with specific inputs |
+| **Tool Selection** | Agent reads tool descriptions to choose the right one |
+| **Multi-step** | Agent can use multiple tools to answer complex queries |
+| **Memory** | Maintaining conversation history for follow-up questions |
 
 ---
 
-## Bonus Exercise: Hybrid RAG Router ⭐⭐⭐⭐⭐
+## When to Use Agentic RAG
 
-**Goal:** Build a system that routes between direct RAG and agent
-
-**Task:** Create a router that decides:
-- Simple queries → Direct RAG (Module 4)
-- Complex queries → Agent (Module 6)
-
-**Classification Criteria:**
-- Query complexity (word count, question marks)
-- Intent (retrieval vs action)
-- Multi-step indicators
-
-**Architecture:**
-```
-User Query
-    ↓
-[Query Classifier]
-    ↓
-  ┌─────┴─────┐
-  ↓           ↓
-Direct RAG   Agent
-  ↓           ↓
-  └─────┬─────┘
-        ↓
-    Response
-```
-
-**Expected Outcome:** Efficient hybrid system
+| Use Case | Direct RAG | Agentic RAG |
+|----------|-----------|-------------|
+| Simple Q&A | ✅ | ❌ |
+| Low latency needed | ✅ | ❌ |
+| Complex multi-step queries | ❌ | ✅ |
+| Multiple data sources | ❌ | ✅ |
+| Interactive conversation | ❌ | ✅ |
+| Predictable behavior | ✅ | ❌ |
+| Cost-sensitive | ✅ | ❌ |
 
 ---
 
-## Challenge Exercise: Multi-Agent System ⭐⭐⭐⭐⭐
+## 🎉 Congratulations!
 
-**Goal:** Build multiple specialized agents
+You've completed the Agentic RAG module! You now know how to:
 
-**Task:** Create a system with:
-1. **Retrieval Agent** - Finds relevant tickets
-2. **Analysis Agent** - Analyzes patterns and trends
-3. **Response Agent** - Generates final user-facing answer
-4. **Coordinator Agent** - Routes to appropriate agent
-
-**Framework Options:**
-- LangGraph for orchestration
-- CrewAI for multi-agent collaboration
-- Custom implementation
-
-**Expected Outcome:** Working multi-agent system
+1. Build agents with custom tools
+2. Optimize tool descriptions for accurate selection
+3. Handle multi-step reasoning
+4. Implement conversational memory
+5. Add error handling for robustness
 
 ---
 
-## Reflection Questions
-
-After completing exercises, consider:
-
-1. **When would you use agentic RAG over direct RAG?**
-2. **What are the cost implications of using agents?**
-3. **How can you make tool selection more accurate?**
-4. **What are the limits of current agents?**
-5. **How would you deploy an agent in production?**
-
----
-
-## Solutions
-
-Solutions and example implementations available in `solutions/` directory (create your own first!).
-
----
-
-## Next Steps
-
-1. Explore LangGraph for more complex workflows
-2. Try different agent types (ReAct, Plan-and-Execute)
-3. Add external API tools (web search, databases)
-4. Implement guardrails and safety checks
-5. Build a full-stack application with the agent
-
-Good luck! 🚀
+**Need help?** Check `solutions.py` or ask the instructor!

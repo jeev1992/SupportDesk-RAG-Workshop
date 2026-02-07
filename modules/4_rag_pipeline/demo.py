@@ -200,6 +200,8 @@ if os.getenv("OPENAI_API_KEY"):
         temperature=0,  # Temperature controls randomness (0 = deterministic, 2 = very creative)
         # For RAG, use temperature=0 to ensure consistent, factual responses
         # Reference: https://platform.openai.com/docs/guides/text-generation/how-should-i-set-the-temperature-parameter
+        timeout=120,  # Increase timeout for slower connections
+        max_retries=3,  # Retry on transient failures
     )
     print(f"✓ Using {os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini')}")
 else:
