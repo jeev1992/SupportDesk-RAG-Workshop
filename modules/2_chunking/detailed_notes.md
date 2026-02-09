@@ -935,6 +935,50 @@ The demo shows:
 3. Comparing retrieval quality across strategies
 4. Metadata filtering
 
+---
+
+### Why Both FAISS and Chroma in the Demo?
+
+> **Instructor Note:** Students may ask why we're showing FAISS when we primarily discussed ChromaDB in the slides. Here's how to address this:
+
+**Short Answer for Students:**
+"The demo shows both to illustrate that the concepts transfer across different vector databases. Once you understand one, using another is straightforward."
+
+**FAISS vs Chroma - When to Mention:**
+
+| Vector DB | Type | Why Show It |
+|-----------|------|-------------|
+| **FAISS** | Low-level library | Shows what's happening "under the hood" |
+| **Chroma** | High-level DB | What you'll use in practice (our focus) |
+
+**Teaching Approach:**
+1. **FAISS section (Parts 2-3)**: "This is the low-level approach - good to understand but verbose"
+2. **Chroma section (Part 4)**: "This is what you'll actually use - handles everything for you"
+3. **Key insight**: "Notice how both do the same thing - store vectors, search by similarity. The concepts are portable!"
+
+**If Short on Time:**
+- Skip the FAISS sections (Parts 2-3)
+- Go straight to Part 4 (Chroma) - this is the practical focus
+- Mention FAISS exists for students who want to explore
+
+**Quick Comparison to Show:**
+```python
+# FAISS: 10+ lines to set up, manual embedding, no persistence
+index = faiss.IndexFlatL2(1536)
+embeddings = [get_embedding(doc) for doc in documents]
+index.add(np.array(embeddings))
+distances, indices = index.search(query_embedding, k=3)
+# Then manually look up documents by indices...
+
+# Chroma: 2 lines, handles everything
+store = Chroma.from_documents(documents, embedding=embeddings_model)
+results = store.similarity_search(query, k=3)  # Returns actual documents!
+```
+
+> **Bottom Line:** We teach Chroma because it's simpler and more practical. FAISS is shown to demystify what vector databases do internally.
+
+---
+
 ### Key Code Points to Highlight
 
 **Strategy Comparison:**
