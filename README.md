@@ -12,6 +12,7 @@ This comprehensive workshop teaches you to build a production-ready Retrieval-Au
 - ✅ Implement a complete RAG pipeline with LangChain
 - ✅ Evaluate with two-layer metrics (retrieval + generation)
 - ✅ Deploy anti-hallucination safeguards
+- ✅ Build agentic RAG systems with multi-step reasoning
 
 ---
 
@@ -104,14 +105,35 @@ python demo.py
 
 ### Module 5: Evaluation (`modules/5_evaluation/`)
 **Learn:**
-- Retrieval metrics (Precision@K, Recall, MRR, F1)
-- Generation metrics (ROUGE, BLEU)
-- Semantic similarity evaluation
-- Systematic testing and improvement
+- Two-layer evaluation approach (Retrieval + Generation)
+- Retrieval metrics (Precision@K, Recall@K, F1)
+- Generation metrics (Groundedness, Completeness)
+- LLM-as-judge for generation evaluation
+- Creating comprehensive evaluation reports
+
+**Technologies:** FAISS, LLM-as-Judge evaluation
 
 **Run:**
 ```bash
 cd modules/5_evaluation
+python demo.py
+```
+
+---
+
+### Module 6: Agentic RAG (`modules/6_agentic_rag/`)
+**Learn:**
+- Creating custom tools for LangChain agents
+- Building agents with OpenAI function calling
+- Implementing conversation memory
+- Multi-step reasoning with tool selection
+- Comparing agentic vs direct RAG approaches
+
+**Technologies:** LangChain Agents, OpenAI Function Calling
+
+**Run:**
+```bash
+cd modules/6_agentic_rag
 python demo.py
 ```
 
@@ -144,11 +166,20 @@ SupportDesk-RAG-Workshop/
     │   ├── demo.py
     │   ├── notes.md
     │   └── exercises.md
-    └── 5_evaluation/
+    ├── 5_evaluation/
+    │   ├── demo.py
+    │   ├── notes.md
+    │   ├── exercises.md
+    │   ├── solutions.py
+    │   └── evaluation_queries.json
+    └── 6_agentic_rag/
         ├── demo.py
         ├── notes.md
         ├── exercises.md
-        └── evaluation_queries.json
+        ├── solutions.py
+        ├── tools.py
+        ├── test_setup.py
+        └── README.md
 ```
 
 ---
