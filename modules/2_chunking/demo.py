@@ -203,20 +203,20 @@ embeddings_model = OpenAIEmbeddings(
 )
 
 # Demo with a paragraph that has CLEAR topic shifts
-# This makes it obvious where semantic chunking will split
+# Using completely unrelated domains for clearer separation
 demo_paragraph = """
-Database performance is critical for application speed. Slow queries can cause timeouts and frustrated users. Adding proper indexes to frequently queried columns dramatically improves response times. Query optimization should be a top priority for any development team.
+The Mars rover collected soil samples from the Jezero crater last week. Scientists believe these rocks may contain signs of ancient microbial life. NASA plans to retrieve these samples in a future mission. The discovery could reshape our understanding of life in the solar system.
 
-The weather forecast shows rain expected throughout the weekend. Temperatures will drop to the mid-40s by Sunday evening. Residents should prepare for possible flooding in low-lying areas. Don't forget to bring an umbrella if you're heading out.
+Grandma's apple pie recipe starts with peeling six large Granny Smith apples. Mix flour, sugar, and cinnamon for the filling. Roll the dough thin and crimp the edges carefully. Bake at 375 degrees for 45 minutes until golden brown.
 
-Authentication security requires multiple layers of protection. Passwords should be hashed using bcrypt or Argon2. Two-factor authentication adds an essential second layer of defense. Session tokens must be rotated regularly to prevent hijacking. API keys should never be exposed in client-side code.
+The defendant was charged with breach of contract under Section 12. The plaintiff seeks damages of fifty thousand dollars plus legal fees. Both parties agreed to mediation before proceeding to trial. The judge scheduled the preliminary hearing for next month.
 """
 
 print("\n  📝 Demo Text (3 distinct topics):")
 print("  " + "-"*70)
-print("  Topic 1: Database performance (sentences 1-4)")
-print("  Topic 2: Weather forecast (sentences 5-8)")
-print("  Topic 3: Authentication security (sentences 9-13)")
+print("  Topic 1: Space exploration (sentences 1-4)")
+print("  Topic 2: Cooking recipe (sentences 5-8)")
+print("  Topic 3: Legal case (sentences 9-12)")
 print("  " + "-"*70)
 
 semantic_splitter = SemanticChunker(
@@ -224,13 +224,15 @@ semantic_splitter = SemanticChunker(
     # How to detect "topic change":
     # - "percentile": Split where similarity is in bottom X percentile
     # - "standard_deviation": Split where similarity is X std devs below mean
-    # - "interquartile": Split where similarity is below Q1 - 1.5*IQR
-    breakpoint_threshold_type="percentile"
+    # - "interquartile": Split where similarity is below Q1 - 1.5*IQR (outlier detection)
+    breakpoint_threshold_type="standard_deviation",
+    breakpoint_threshold_amount=1.0  # Split when similarity drops 1 std dev below mean
 )
 
 demo_doc = Document(page_content=demo_paragraph.strip())
 semantic_chunks = semantic_splitter.split_documents([demo_doc])
-print(f"\n✓ Created {len(semantic_chunks)} chunks (expected: ~3 for 3 topics)")
+print(f"\n✓ Created {len(semantic_chunks)} chunks")
+print("  Note: Semantic chunking results vary based on embedding model and threshold settings")
 
 # Show each semantic chunk
 print("\n  📊 Resulting Semantic Chunks:")
@@ -244,8 +246,8 @@ for i, chunk in enumerate(semantic_chunks):
             print(f"    {line.strip()}")
     print("  " + "~"*60)
 
-print("\n  ✨ Notice how each chunk contains semantically related sentences!")
-print("  The chunker detected topic shifts between database → weather → auth")
+print("\n  ✨ The chunker attempts to detect topic shifts between space → cooking → legal")
+print("  Adjust breakpoint_threshold_amount (lower = more sensitive) if results vary.")
 
 # =============================================================================
 # STRATEGY 4: Markdown Structure-Aware Splitting

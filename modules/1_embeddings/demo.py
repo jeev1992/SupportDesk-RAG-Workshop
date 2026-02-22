@@ -395,7 +395,7 @@ print("  • Right chart: Query similarity scores (what drives retrieval)")
 print("  • High similarity (green) = semantically similar content")
 print("  • Low similarity (red) = different topics/meanings")
 print("  • These scores are EXACT - they show true relationships in 1536D space!")
-plt.show()
+plt.show(block=False)
 
 # ============================================================================
 # PART 5: Experiment with Different Queries
