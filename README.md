@@ -18,25 +18,78 @@ This comprehensive workshop teaches you to build a production-ready Retrieval-Au
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### 1. Install Python (one-time)
+- Install Python **3.10+** (recommended: **3.11**) from https://www.python.org/downloads/
+- During install on Windows, enable **"Add Python to PATH"**
+
+### 2. Clone or open this repo
 ```bash
+# If you already have the repo, skip this step
+git clone <your-repo-url>
+cd SupportDesk-RAG-Workshop
+```
+
+### 3. Create a virtual environment (recommended)
+
+**Windows (PowerShell):**
+```powershell
+py -3.11 -m venv .venv
+```
+
+**macOS/Linux:**
+```bash
+python3 -m venv .venv
+```
+
+### 4. Activate the virtual environment
+
+**Windows (PowerShell):**
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+**Windows (CMD):**
+```bat
+.venv\Scripts\activate.bat
+```
+
+**macOS/Linux:**
+```bash
+source .venv/bin/activate
+```
+
+### 5. Install dependencies
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2. Configure OpenAI API
-```bash
-# Copy the example environment file
-cp .env.example .env
+### 6. Configure OpenAI API
 
-# Edit .env and add your API key
-# OPENAI_API_KEY=sk-your-key-here
+**Windows (PowerShell):**
+```powershell
+Copy-Item .env.example .env
 ```
 
-### 3. Test Installation
+**macOS/Linux:**
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set:
+```env
+OPENAI_API_KEY=sk-your-key-here
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_CHAT_MODEL=gpt-4o-mini
+```
+
+### 7. Run a smoke test
 ```bash
 cd modules/1_embeddings
 python demo.py
 ```
+
+If Module 1 runs, your environment is ready.
 
 ---
 
@@ -223,7 +276,7 @@ See [OpenAI Pricing](https://openai.com/pricing) for current rates.
 
 ## 🎯 Prerequisites
 
-- Python 3.8+
+- Python 3.10+ (recommended: 3.11)
 - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 - Basic understanding of Python
 - Familiarity with APIs (helpful but not required)
@@ -231,6 +284,20 @@ See [OpenAI Pricing](https://openai.com/pricing) for current rates.
 ---
 
 ## 🛠️ Troubleshooting
+
+### Virtual Environment Activation Fails (Windows PowerShell)
+If you see an execution policy error:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+### `python` Command Not Found (Windows)
+Use:
+```powershell
+py --version
+py -3.11 -m venv .venv
+```
 
 ### OpenAI API Errors
 - Verify API key in `.env` file
@@ -240,6 +307,12 @@ See [OpenAI Pricing](https://openai.com/pricing) for current rates.
 ### Import Errors
 ```bash
 pip install --upgrade -r requirements.txt
+```
+
+If issues persist, confirm your venv is active and reinstall cleanly:
+```bash
+pip uninstall -y -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ### Path Issues

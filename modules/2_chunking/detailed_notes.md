@@ -968,6 +968,38 @@ chroma_store = Chroma.from_documents(
 results = chroma_store.similarity_search(query, k=3)
 ```
 
+**Why MMR matters (teach this explicitly):**
+
+Normal semantic search (`similarity_search`) ranks by relevance only.
+That can produce near-duplicate results, which wastes prompt space.
+
+Example query: **"login issues after password reset"**
+
+- Normal top-3 might be:
+    1. "Can't login after reset on web"
+    2. "Login fails after password reset"
+    3. "Password reset causes auth error"
+
+These are all relevant, but very similar to each other.
+
+At production scale (millions of chunks/documents), this gets worse: the top-k can be dominated by multiple chunks from the same source document, which hurts breadth of evidence.
+
+MMR (Maximal Marginal Relevance) improves this by balancing:
+1. Query relevance
+2. Diversity from already selected results
+
+So MMR top-3 might be:
+1. "Can't login after reset on web" (core issue)
+2. "MFA token invalid after password reset" (different angle)
+3. "Session cookie not refreshed" (another angle)
+
+```python
+mmr_results = chroma_store.max_marginal_relevance_search(query, k=3)
+```
+
+**Instructor script:**
+"Similarity search gives me the most similar chunks; MMR gives me the most useful set of chunks. For RAG, that often means better answers because context is less repetitive and covers more angles."
+
 **Metadata Filtering (key feature!):**
 ```python
 # Search only authentication tickets

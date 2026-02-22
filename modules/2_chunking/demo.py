@@ -440,6 +440,24 @@ for i, doc in enumerate(chroma_results, 1):
 # PROBLEM: Similarity search can return very similar documents
 # SOLUTION: MMR balances relevance AND diversity
 #
+# EXAMPLE (query: "login issues after password reset"):
+#   Normal similarity search top-3 might be:
+#     1) "Can't login after reset on web"
+#     2) "Login fails after password reset"
+#     3) "Password reset causes auth error"
+#   These are all relevant, but near-duplicates (low coverage).
+#
+# Large-scale note (millions of chunks/documents):
+#   Normal semantic search often returns multiple top hits from the SAME source
+#   document because adjacent chunks are highly similar.
+#   You get depth from one document, but poor cross-document coverage.
+#
+#   MMR top-3 might be:
+#     1) "Can't login after reset on web"         (core issue)
+#     2) "MFA token invalid after password reset" (different angle)
+#     3) "Session cookie not refreshed"           (another angle)
+#   Still relevant, but broader context for better troubleshooting/RAG answers.
+#
 # HOW IT WORKS:
 #   1. Get top-k similar documents
 #   2. Select first result normally

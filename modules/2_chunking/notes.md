@@ -439,6 +439,54 @@ def evaluate_chunking(chunks, test_queries):
 - Storage overhead
 - Query latency
 
+## Retrieval Diversity: Semantic Search vs MMR
+
+### Problem with Normal Semantic Search
+
+`similarity_search()` optimizes only for relevance to the query, so top results can be near-duplicates.
+
+Example query: **"login issues after password reset"**
+
+- Top 3 from normal semantic search might be:
+    1. "Can't login after reset on web"
+    2. "Login fails after password reset"
+    3. "Password reset causes auth error"
+
+All 3 are relevant, but they are very similar to each other, so you get limited coverage.
+
+At larger scale (millions of chunks/documents), this happens even more: top results often come from different chunks of the **same source document**, which reduces cross-document coverage.
+
+```python
+results = chroma_store.similarity_search(
+        "login issues after password reset",
+        k=3
+)
+```
+
+### How MMR Improves This
+
+`max_marginal_relevance_search()` balances:
+- **Relevance** to the query
+- **Diversity** from already selected results
+
+So results stay relevant but cover different subtopics.
+
+Example MMR top 3 could be:
+1. "Can't login after reset on web" (core issue)
+2. "MFA token invalid after password reset" (different angle)
+3. "Session cookie not refreshed" (another angle)
+
+```python
+mmr_results = chroma_store.max_marginal_relevance_search(
+        "login issues after password reset",
+        k=3
+)
+```
+
+**Rule of thumb:**
+- Use `similarity_search` when you want the most similar matches.
+- Use MMR when you want relevant **and** non-redundant context (often better for RAG prompts).
+
 ## Best Practices
 
 ### 1. Preprocessing Text

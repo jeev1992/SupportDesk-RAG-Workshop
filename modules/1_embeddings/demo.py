@@ -228,6 +228,24 @@ print(f"Query embedding shape: {query_embedding.shape}")  # (1, 1536)
 # This is the core of semantic search!
 # We compare the query vector against every document vector
 # Result: one similarity score per document
+#
+# EXACTLY what this line does:
+#   similarities = cosine_similarity(query_embedding, embeddings)[0]
+#
+# Shapes in this demo:
+#   query_embedding: (1, 1536)      -> 1 query vector
+#   embeddings:      (N, 1536)      -> N ticket vectors
+#   cosine_similarity(...) returns: (1, N)
+#
+# Why [0]?
+#   There is only one query row, so [0] extracts that row,
+#   giving a 1D array of length N (one score per ticket).
+#
+# Mini-example:
+#   query_embedding = [[1, 1]]
+#   embeddings      = [[1, 1], [1, 0], [-1, -1]]
+#   cosine_similarity(...) -> [[1.0000, 0.7071, -1.0000]]   # shape (1, 3)
+#   ...[0]                ->  [1.0000, 0.7071, -1.0000]     # shape (3,)
 # -----------------------------------------------------------------------------
 similarities = cosine_similarity(query_embedding, embeddings)[0]
 print(f"\nComputed similarity scores for {len(similarities)} tickets")
