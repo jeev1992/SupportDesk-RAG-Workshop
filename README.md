@@ -33,7 +33,7 @@ cd SupportDesk-RAG-Workshop
 
 **Windows (PowerShell):**
 ```powershell
-py -3.11 -m venv .venv
+python -m venv .venv
 ```
 
 **macOS/Linux:**
@@ -45,7 +45,7 @@ python3 -m venv .venv
 
 **Windows (PowerShell):**
 ```powershell
-.\.venv\Scripts\Activate.ps1
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Activate.ps1
 ```
 
 **Windows (CMD):**
@@ -188,6 +188,33 @@ python demo.py
 ```bash
 cd modules/6_agentic_rag
 python demo.py
+```
+
+---
+
+### Run All Modules
+
+To run all module demos sequentially from the project root:
+
+**Windows (PowerShell):**
+```powershell
+$modules = @("1_embeddings", "2_chunking", "3_indexing", "4_rag_pipeline", "5_evaluation", "6_agentic_rag")
+foreach ($module in $modules) {
+    Write-Host "`n=== Running Module: $module ===" -ForegroundColor Cyan
+    Push-Location "modules/$module"
+    python demo.py
+    Pop-Location
+}
+```
+
+**macOS/Linux:**
+```bash
+for module in 1_embeddings 2_chunking 3_indexing 4_rag_pipeline 5_evaluation 6_agentic_rag; do
+    echo -e "\n=== Running Module: $module ==="
+    cd modules/$module
+    python demo.py
+    cd ../..
+done
 ```
 
 ---
