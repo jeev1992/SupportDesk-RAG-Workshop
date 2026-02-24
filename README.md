@@ -18,10 +18,47 @@ This comprehensive workshop teaches you to build a production-ready Retrieval-Au
 
 ## 🚀 Quick Start
 
-### 1. Install Python (one-time)
-- Install Python **3.12.x only** from https://www.python.org/downloads/
-- During install on Windows, enable **"Add Python to PATH"**
-- ⚠️ **Python 3.13 and 3.14 are not supported** — `chromadb` depends on Pydantic V1 internals that were removed in Python 3.13+.
+### 1. Install Python 3.12 (one-time)
+
+> ⚠️ **Python 3.13 and 3.14 are not supported** — `chromadb` depends on Pydantic V1 internals that were removed in Python 3.13+.
+
+**Windows (PowerShell with winget):**
+```powershell
+winget install Python.Python.3.12
+```
+Restart your terminal after installation.
+
+**Windows (Manual installer):**
+1. Download Python 3.12 from https://www.python.org/downloads/release/python-3129/
+2. Run the installer
+3. ✅ **Check "Add python.exe to PATH"** at the bottom of the first screen
+4. Click **"Install Now"**
+
+**Verify installation (Windows):**
+```powershell
+py -3.12 --version
+```
+
+**macOS:**
+```bash
+# Using Homebrew (recommended)
+brew install python@3.12
+
+# Verify installation
+python3.12 --version
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt update
+sudo apt install software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.12 python3.12-venv
+
+# Verify installation
+python3.12 --version
+```
 
 ### 2. Clone or open this repo
 ```bash
