@@ -11,6 +11,11 @@ print("Testing Module 6 Setup...")
 print("="*60)
 
 # Test 1: Check if we can import required packages
+# -----------------------------------------------------------------------------
+# Why this test matters:
+# - Import failures are the most common early setup issue.
+# - Testing each key package separately makes troubleshooting faster.
+# -----------------------------------------------------------------------------
 print("\n1. Testing imports...")
 try:
     from langchain_openai import ChatOpenAI
@@ -37,6 +42,10 @@ except ImportError as e:
     print(f"   ✗ langchain_core.tools: {e}")
 
 # Test 2: Check if data file exists
+# -----------------------------------------------------------------------------
+# The demos rely on synthetic ticket data. If the path is wrong, many later
+# failures can look like logic bugs, so we validate filesystem access early.
+# -----------------------------------------------------------------------------
 print("\n2. Testing data file access...")
 data_path = '../../data/synthetic_tickets.json'
 if os.path.exists(data_path):
@@ -49,6 +58,10 @@ else:
     print(f"   ✗ Cannot find {data_path}")
 
 # Test 3: Check environment variables
+# -----------------------------------------------------------------------------
+# OpenAI API key is required for embeddings/chat calls. We only print a prefix
+# for safety so users can confirm presence without exposing full secrets.
+# -----------------------------------------------------------------------------
 print("\n3. Testing environment variables...")
 from dotenv import load_dotenv
 load_dotenv()
@@ -60,6 +73,10 @@ else:
     print("   ✗ OPENAI_API_KEY not found")
 
 # Test 4: Try importing our tools
+# -----------------------------------------------------------------------------
+# This validates local module wiring and confirms the tool factory can build
+# all expected tools (which indirectly validates vectorstore initialization).
+# -----------------------------------------------------------------------------
 print("\n4. Testing custom tools module...")
 try:
     from tools import SupportTicketTools

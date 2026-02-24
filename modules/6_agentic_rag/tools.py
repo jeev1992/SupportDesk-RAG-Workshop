@@ -23,7 +23,12 @@ class SupportTicketTools:
     """Collection of tools for the support assistant agent."""
     
     def __init__(self, tickets_path: str = '../../data/synthetic_tickets.json'):
-        """Initialize tools with ticket data."""
+        """
+        Initialize ticket data + retrieval infrastructure once at startup.
+
+        This keeps tool calls fast because embeddings/vector index are prepared
+        ahead of time rather than rebuilt per request.
+        """
         # Load tickets
         with open(tickets_path, 'r', encoding='utf-8') as f:
             self.tickets = json.load(f)
@@ -35,7 +40,12 @@ class SupportTicketTools:
         self._setup_vectorstore()
     
     def _setup_vectorstore(self):
-        """Create vector store from tickets."""
+        """
+        Build a semantic-search index from ticket text.
+
+        Each ticket becomes one Document with metadata so agent responses can
+        include both narrative context and structured filters/citations.
+        """
         documents = []
         for ticket in self.tickets:
             content = f"""Ticket ID: {ticket['ticket_id']}
@@ -56,7 +66,7 @@ Priority: {ticket['priority']}"""
             )
             documents.append(doc)
         
-        # Create persistent vector store
+        # Persist locally so repeated runs reuse indexed data on disk.
         self.vectorstore = Chroma.from_documents(
             documents=documents,
             embedding=self.embeddings,
@@ -73,6 +83,7 @@ Priority: {ticket['priority']}"""
         Returns:
             Formatted string with relevant tickets
         """
+        # Top-k semantic retrieval by embedding similarity.
         results = self.vectorstore.similarity_search(query, k=3)
         
         if not results:
@@ -95,6 +106,7 @@ Priority: {ticket['priority']}"""
         Returns:
             Formatted ticket details or error message
         """
+        # Normalize input to avoid case/whitespace mismatches.
         ticket_id = ticket_id.upper().strip()
         
         for ticket in self.tickets:
@@ -120,6 +132,7 @@ Resolved: {ticket['resolved_date']}"""
         Returns:
             List of tickets in the category
         """
+        # Normalize category string for case-insensitive exact matching.
         category = category.strip()
         matching = [t for t in self.tickets if t['category'].lower() == category.lower()]
         
@@ -145,7 +158,8 @@ Resolved: {ticket['resolved_date']}"""
         """
         total = len(self.tickets)
         
-        # Category distribution
+        # Aggregate counts for dashboard/overview style questions.
+        # Using dict accumulation keeps this dependency-free and explicit.
         categories = {}
         priorities = {}
         for ticket in self.tickets:
@@ -172,6 +186,8 @@ Resolved: {ticket['resolved_date']}"""
         Returns:
             List of Tool objects for the agent
         """
+        # Tool descriptions are part of the model prompt context.
+        # High-quality descriptions materially improve tool-selection accuracy.
         return [
             Tool(
                 name="SearchSimilarTickets",

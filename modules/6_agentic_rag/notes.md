@@ -79,22 +79,76 @@ Tool(
 )
 ```
 
-### 3. Memory Types
+### 3. Memory with RunnableWithMessageHistory
 
-**ConversationBufferMemory:**
-- Stores all messages verbatim
-- Simple but can get long
-- Good for short conversations
+Use `RunnableWithMessageHistory` as the modern memory orchestration layer.
+You can still implement three practical strategies with it.
 
-**ConversationSummaryMemory:**
-- Summarizes older messages
-- Saves tokens
-- Good for long conversations
+**Strategy A — Full history (buffer-like):**
+- Best for: short conversations (< 10 turns)
+- Token cost: grows linearly with conversation length
 
-**ConversationBufferWindowMemory:**
-- Keeps last N messages
-- Fixed size
-- Balance between context and cost
+```python
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.chat_history import InMemoryChatMessageHistory
+
+store = {}
+
+def get_history(session_id: str):
+   return store.setdefault(session_id, InMemoryChatMessageHistory())
+
+prompt = ChatPromptTemplate.from_messages([
+   ("system", "You are SupportDesk AI."),
+   MessagesPlaceholder("history"),
+   ("human", "{question}")
+])
+
+chain_with_history = RunnableWithMessageHistory(
+   prompt | llm,
+   get_history,
+   input_messages_key="question",
+   history_messages_key="history"
+)
+```
+
+**Strategy B — Windowed history (window-like):**
+- Best for: most production use cases
+- Token cost: fixed (bounded by window size)
+
+```python
+WINDOW_TURNS = 3
+
+def apply_window(session_id: str):
+   history = store[session_id]
+   history.messages = history.messages[-(WINDOW_TURNS * 2):]
+```
+
+**Strategy C — Summary-style history (summary-like):**
+- Best for: long conversations where early context still matters
+- Token cost: medium (extra compression step)
+
+```python
+from langchain_core.messages import SystemMessage
+
+def compress_older_turns(session_id: str, keep_recent_turns: int = 2):
+   history = store[session_id]
+   recent = keep_recent_turns * 2
+   if len(history.messages) <= recent + 1:
+      return
+
+   older = history.messages[:-recent]
+   summary = " | ".join(f"{m.type}: {m.content[:80]}" for m in older)
+   history.messages = [SystemMessage(content=f"Summary: {summary[:600]}")] + history.messages[-recent:]
+```
+
+**Comparison:**
+
+| Strategy | Token Cost | Context Loss | Best For |
+|----------|-----------|--------------|----------|
+| Full history | High (grows) | None | Short chats < 10 turns |
+| Windowed history | Low (fixed) | Drops old messages | Most production cases |
+| Summary-style history | Medium (compression step) | Low (summarised) | Long sessions |
 
 ---
 
@@ -286,6 +340,78 @@ Agent:
 - Use direct RAG for common queries
 - Route complex queries to agent
 - Best of both worlds!
+
+---
+
+## Hybrid Routing
+
+The **hybrid routing** pattern sits in front of both pipelines. A lightweight classifier or keyword heuristic inspects each incoming query and dispatches it to the right handler — avoiding the cost and latency of the full agentic loop for simple lookups.
+
+### Routing Logic
+
+```
+Incoming Query
+      │
+      ▼
+ Route Decision ──► Direct RAG (Module 4 style)
+  (heuristic or       └── simple lookup, low latency
+   classifier)
+      │
+      └─────────► Agentic RAG (Module 6 agent)
+                      └── multi-step, flexible
+```
+
+### Implementation
+
+```python
+import re
+
+def route_query(query: str) -> str:
+    """
+    Classify a query as 'direct' or 'agentic'.
+    Returns 'direct' for simple lookups, 'agentic' for complex reasoning.
+    """
+    query_lower = query.lower().strip()
+
+    # Direct lookup signals: specific ticket ID or statistics request
+    direct_patterns = [
+        r'\bTICK-\d+\b',                                         # "Show me TICK-005"
+        r'\b(statistics|overview|summary|count|how many)\b',     # "how many tickets?"
+    ]
+    for pattern in direct_patterns:
+        if re.search(pattern, query_lower, re.IGNORECASE):
+            return 'direct'
+
+    # Agentic signals: troubleshooting, comparison, multi-step
+    agentic_patterns = [
+        r'\b(how (do|to|can)|why (is|does|did)|fix|resolve|compare)\b',
+        r'\b(find .* and|critical|all .* tickets|details? (of|on) each)\b',
+    ]
+    for pattern in agentic_patterns:
+        if re.search(pattern, query_lower, re.IGNORECASE):
+            return 'agentic'
+
+    # Default to direct RAG for anything unclassified
+    return 'direct'
+
+
+def hybrid_query(query: str, direct_fn, agentic_fn) -> str:
+    """Dispatch query to the appropriate handler."""
+    route = route_query(query)
+    print(f"  → Routed to: {route.upper()}")
+    if route == 'direct':
+        return direct_fn(query)
+    return agentic_fn(query)
+```
+
+### Example Routing Decisions
+
+| Query | Route | Reason |
+|-------|-------|--------|
+| `"Show me TICK-005"` | Direct | Contains explicit ticket ID |
+| `"Give me an overview of tickets"` | Direct | Statistics keyword |
+| `"How do I fix login failures?"` | Agentic | "how to fix" pattern |
+| `"Find critical DB issues and compare solutions"` | Agentic | Multi-step comparison |
 
 ---
 

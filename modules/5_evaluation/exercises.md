@@ -2,6 +2,8 @@
 
 Complete these exercises after studying `demo.py`. Solutions are in `solutions.py`.
 
+> ✅ **Exercise style for this workshop:** keep each solution to a **small edit** (usually 3–15 lines) in existing code blocks.
+
 ---
 
 ## Easy Exercises (Start Here!)
@@ -165,7 +167,7 @@ Format: Score: X / Reason: <explanation>"""
 
 ### Exercise 6: Failure Analysis
 
-**Task**: Find queries where retrieval performs poorly.
+**Task**: Find poor retrieval cases with minimal code changes.
 
 ```python
 from collections import defaultdict
@@ -179,6 +181,7 @@ def analyze_failures(eval_queries, vector_store, threshold=0.5):
         retrieved = [doc.metadata['ticket_id'] for doc in docs]
         metrics = calculate_metrics(retrieved, query['relevant_ticket_ids'])
         
+        # TODO 1: keep only low-precision queries
         if metrics['precision'] < threshold:
             failures.append({
                 'query': query['question'],
@@ -188,7 +191,7 @@ def analyze_failures(eval_queries, vector_store, threshold=0.5):
                 'category': query.get('category', 'Unknown')
             })
     
-    # Group by category to find patterns
+    # TODO 2: group failures by category
     by_category = defaultdict(list)
     for f in failures:
         by_category[f['category']].append(f)
@@ -209,7 +212,7 @@ def analyze_failures(eval_queries, vector_store, threshold=0.5):
 
 ### Exercise 7: Track Latency and Cost
 
-**Task**: Measure operational metrics for production readiness.
+**Task**: Add lightweight operational metrics (small patch only).
 
 ```python
 import time
@@ -233,7 +236,7 @@ class RAGMetrics:
         cost = (total_tokens / 1000) * 0.002  # GPT-4o-mini estimate
         print(f"Est. cost: ${cost:.4f}")
 
-# Usage
+# Usage (no refactor needed — just run and inspect)
 metrics = RAGMetrics()
 for query in eval_queries[:10]:
     start = time.time()
@@ -245,13 +248,72 @@ for query in eval_queries[:10]:
 metrics.report()
 ```
 
+**Small-change option (recommended):**
+- If this class feels too long, add only **two prints** to the existing `demo.py` report section:
+    - average latency
+    - estimated tokens per query
+
+---
+
+### Exercise 8: Implement a Release Gate
+
+**Task**: Write a function that takes a dict of evaluation metrics and returns a deployment decision.
+
+```python
+def get_release_decision(metrics: dict) -> tuple:
+    """
+    Evaluate metrics against production thresholds and return a release decision.
+
+    Returns:
+        (decision, flags) where decision is 'PASS', 'REVIEW', or 'BLOCK'
+        and flags is a list of metric issues found.
+
+    Thresholds:
+        Precision@3:  PASS >= 0.80 | REVIEW >= 0.70 | BLOCK < 0.70
+        Recall@3:     PASS >= 0.70 | REVIEW >= 0.60 | BLOCK < 0.60
+        F1@3:         PASS >= 0.75 | REVIEW >= 0.65 | BLOCK < 0.65
+        Groundedness: PASS >= 0.85 | REVIEW >= 0.75 | BLOCK < 0.75
+        Completeness: PASS >= 0.75 | REVIEW >= 0.65 | BLOCK < 0.65
+    """
+    # TODO: implement
+    pass
+```
+
+**Test with these scenarios:**
+```python
+# Should return PASS
+good = {'precision': 0.85, 'recall': 0.75, 'f1': 0.80, 'groundedness': 0.90, 'completeness': 0.80}
+
+# Should return REVIEW (recall in yellow zone)
+borderline = {'precision': 0.85, 'recall': 0.65, 'f1': 0.74, 'groundedness': 0.86, 'completeness': 0.78}
+
+# Should return BLOCK (groundedness in red zone)
+bad = {'precision': 0.82, 'recall': 0.71, 'f1': 0.76, 'groundedness': 0.60, 'completeness': 0.70}
+
+decision, flags = get_release_decision(good)
+print(f"Good system:      {decision} {flags}")
+
+decision, flags = get_release_decision(borderline)
+print(f"Borderline system: {decision} {flags}")
+
+decision, flags = get_release_decision(bad)
+print(f"Bad system:        {decision} {flags}")
+```
+
+**Expected output:**
+```
+Good system:       PASS []
+Borderline system: REVIEW ['recall = 0.65 (target 0.70)']
+Bad system:        BLOCK ['groundedness = 0.60 (min 0.75)']
+```
+
 ---
 
 ## Bonus Challenge
 
 ### Bonus: Create Comprehensive Evaluation Report
 
-**Task**: Combine all metrics into a single report card.
+**Task**: Extend the existing report with one additional signal (small edit).
 
 ```python
 def evaluation_report(eval_queries, vector_store, generate_fn):
@@ -279,8 +341,11 @@ def evaluation_report(eval_queries, vector_store, generate_fn):
     print(f"  Recall@3:    {np.mean([s['recall'] for s in retrieval_scores]):.4f}")
     print(f"\nGENERATION:")
     print(f"  Groundedness: (check individual scores)")
+    # TODO: add one simple PASS/REVIEW/BLOCK line based on Precision@3 only
     print("=" * 60)
 ```
+
+Keep this bonus to ~5 extra lines.
 
 **Targets for production:**
 - Precision@3 > 0.80

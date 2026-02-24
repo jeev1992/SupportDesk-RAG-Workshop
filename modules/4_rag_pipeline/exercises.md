@@ -2,6 +2,8 @@
 
 Complete these exercises after studying `demo.py`. Solutions are in `solutions.py`.
 
+> ✅ **Exercise style for this workshop:** keep each solution to a **small edit** (usually 3–15 lines) in existing files. Avoid creating new modules.
+
 ---
 
 ## Easy Exercises (Start Here!)
@@ -118,30 +120,19 @@ The solution is to clear all active sessions and force re-authentication [TICK-0
 
 ### Exercise 4: Build a Fallback System
 
-**Task**: Handle cases where retrieval confidence is low.
+**Task**: Tune fallback behavior with a tiny patch (no new function).
 
-**Add this function to handle fallbacks:**
+**In `demo.py`, update the existing validation path by changing only:**
+1. `min_similarity_score` (try `0.5`, then `0.7`)
+2. The fallback message text to be clearer for users
+
 ```python
-def smart_rag(query, vector_store, qa_chain):
-    """RAG with intelligent fallbacks"""
-    # Get docs with scores (lower distance = better match)
-    docs_with_scores = vector_store.similarity_search_with_score(query, k=3)
-    
-    if not docs_with_scores:
-        return "No relevant tickets found."
-    
-    best_distance = docs_with_scores[0][1]
-    
-    if best_distance < 0.5:  # Very relevant
-        return qa_chain.invoke(query)
-    
-    elif best_distance < 1.0:  # Somewhat relevant
-        ticket_id = docs_with_scores[0][0].metadata['ticket_id']
-        return f"Found possibly relevant ticket ({ticket_id}), but confidence is moderate."
-    
-    else:  # Not relevant
-        return "I don't have relevant ticket history for this question."
+# Existing function already present in demo.py
+def rag_with_validation(query, retriever, llm, min_similarity_score=0.5):
+    ...
 ```
+
+**Goal:** Observe how stricter thresholds reduce risky answers.
 
 **Test with**:
 - High confidence: "authentication problems"
@@ -154,37 +145,25 @@ def smart_rag(query, vector_store, qa_chain):
 
 ### Exercise 5: Compare Chain Types
 
-**Task**: Implement different retrieval strategies and compare performance.
+**Task**: Compare strategies with very small edits (do not implement full map-reduce).
 
 ```python
-import time
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
+# Keep chain structure unchanged.
+# Only edit retriever config in place and compare outputs:
 
-# 1. "stuff" strategy - All docs in one prompt (default LCEL pattern)
-stuff_prompt = ChatPromptTemplate.from_template(
-    "Answer using context:\n\nContext: {context}\n\nQuestion: {question}"
-)
-stuff_chain = (
-    {"context": retriever | format_docs, "question": RunnablePassthrough()}
-    | stuff_prompt | llm | StrOutputParser()
-)
+# Run 1: similarity
+retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
 
-# 2. "map_reduce" strategy - Process each doc, then combine
-docs = retriever.invoke(query)
-individual_answers = []
-for doc in docs:
-    single_chain = single_doc_prompt | llm | StrOutputParser()
-    individual_answers.append(single_chain.invoke({"doc": doc.page_content}))
-combined_result = combine_chain.invoke({"summaries": "\n".join(individual_answers)})
+# Run 2: mmr
+retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 3, "fetch_k": 10})
 ```
 
 **Compare for query `"How do I fix database timeouts?"`**:
 - Speed
 - Answer quality  
-- Token usage
 - Best use cases
+
+Keep this exercise to retriever-line changes only.
 
 ---
 
@@ -221,7 +200,7 @@ docs = vector_store.similarity_search(
 **Task**: Stream responses word-by-word for better UX.
 
 ```python
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_core.callbacks import StreamingStdOutCallbackHandler
 
 # Create streaming LLM
 streaming_llm = ChatOpenAI(
@@ -299,7 +278,7 @@ result2 = ask_with_history("How do I fix it?", chat_history)  # "it" = auth fail
 
 ### Bonus: Hallucination Detection
 
-**Task**: Detect when the LLM makes up information not in sources.
+**Task**: Add one guardrail with a tiny edit.
 
 ```python
 def detect_hallucination(answer, source_documents, llm):
@@ -319,10 +298,15 @@ Respond: "GROUNDED" or "HALLUCINATION" with brief explanation.
 
 Response:"""
     
-    return llm.invoke(prompt).content
+    verdict = llm.invoke(prompt).content
+    return verdict
 ```
 
-**Test**: Run this on your RAG answers and see if it catches any hallucinations.
+**Small-change requirement:**
+- Add only one extra line that forces a conservative output when no source documents are passed.
+- Keep the rest of the function unchanged.
+
+**Test**: Run on one grounded answer and one intentionally unsupported answer.
 
 ---
 

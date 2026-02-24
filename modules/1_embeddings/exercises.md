@@ -1,5 +1,7 @@
 # Hour 1 Exercises: Embeddings & Similarity Search
 
+> ✅ **Exercise style for this workshop:** keep each solution to a **small edit** (usually 3–15 lines) in existing files.
+
 ## Exercise 1: Change the Search Query (Easy)
 
 **Task**: Modify the demo to search for a different type of issue.
@@ -111,9 +113,9 @@ for q in [query1, query2]:
 
 ## Exercise 5: Test Semantic Understanding (Medium)
 
-**Task**: Verify that embeddings understand meaning, not just keywords.
+**Task**: Verify that embeddings understand meaning, not just keywords, with a small patch.
 
-**Copy this complete code into a new file** `test_semantic.py`:
+**In `demo.py`, add a short block near the end** (no new file needed):
 ```python
 import numpy as np
 import os
@@ -150,6 +152,8 @@ for i, text1 in enumerate(texts):
             print(f"{sim:.3f}  '{text1[:30]}...' vs '{text2[:30]}...'")
 ```
 
+Keep this to ~15 lines if you simplify printing.
+
 **Run it and answer**:
 - What's the similarity between "authentication failed" and "login rejected"?
 - What's the similarity between "authentication failed" and "database timeout"?
@@ -159,9 +163,16 @@ for i, text1 in enumerate(texts):
 
 ## Exercise 6: Filter by Category (Medium)
 
-**Task**: Add category filtering to the search.
+**Task**: Add category filtering with one-line logic.
 
-**Copy and complete this code** (fill in the ONE missing line):
+**Use the existing search loop in demo/solutions style and add this ONE line:**
+
+```python
+if category_filter and ticket['category'] != category_filter:
+    continue
+```
+
+If you prefer, use the full snippet below as reference:
 ```python
 import json
 import numpy as np
@@ -221,9 +232,13 @@ for ticket, score in search_with_category("login problem", category_filter="Auth
 
 ## Exercise 7: Batch vs Single Embedding (Medium)
 
-**Task**: Compare the speed of batch vs single API calls.
+**Task**: Compare speed with a tiny measurement patch.
 
-**Copy and run this code** (no changes needed - just observe the results):
+Use the existing embedding section and add 6–10 lines with `time.time()` around:
+- one-by-one embedding calls
+- one batched embedding call
+
+Reference snippet:
 ```python
 import time
 import os
@@ -271,6 +286,8 @@ print(f"  Always batch your embeddings in production!")
 **Task**: Create a visual heatmap showing how tickets relate to each other.
 
 **This is optional** - only try if you finished the other exercises.
+
+Small-edit option: generate the heatmap for only first 5 tickets and skip cell annotations.
 
 ```python
 import json

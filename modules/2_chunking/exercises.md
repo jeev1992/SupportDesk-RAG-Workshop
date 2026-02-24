@@ -1,5 +1,7 @@
 # Hour 2 Exercises: Chunking & Vector Stores
 
+> ✅ **Exercise style for this workshop:** keep each solution to a **small edit** (usually 3–15 lines) in existing files.
+
 ## Exercise 1: Change the Chunk Size (Easy)
 
 **Task**: Modify the demo to use larger chunks.
@@ -98,9 +100,10 @@ filter={"category": "Email"}
 
 ## Exercise 5: Compare Chunk Sizes (Medium)
 
-**Task**: See how chunk size affects the number of chunks created.
+**Task**: See how chunk size affects chunk counts with a tiny loop.
 
-**Copy and run this code** (creates a comparison table):
+In existing code, add a short loop over `[100, 200, 300, 500]` and print chunk counts.
+Reference snippet:
 ```python
 import json
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -179,9 +182,15 @@ for i, (doc, score) in enumerate(results_with_scores, 1):
 
 ## Exercise 7: Filter by Multiple Conditions (Medium)
 
-**Task**: Search with combined filters (category AND priority).
+**Task**: Search with combined filters (category AND priority) using one filter line.
 
-**Copy and complete this code** (the filter line is already filled in for reference):
+Use this filter line in your current search block:
+
+```python
+combined_filter = {"$and": [{"category": "Authentication"}, {"priority": "High"}]}
+```
+
+Reference full snippet:
 ```python
 import json
 import os
@@ -235,9 +244,14 @@ for doc in results:
 
 ## Exercise 8: Save and Load Vector Store (Medium)
 
-**Task**: Persist a vector store and reload it.
+**Task**: Persist a vector store and reload it with minimal edits.
 
-**Copy and run this complete code**:
+Use your existing `Chroma.from_documents(...)` block and only add:
+1. `persist_directory=...` on creation
+2. one reload block with same collection name
+3. one query to verify it works
+
+Reference snippet:
 ```python
 import json
 import os
@@ -298,6 +312,8 @@ for doc in results:
 **Task**: Compare how semantic chunking differs from fixed-size chunking.
 
 **Note**: This is optional and takes longer to run.
+
+Small-edit option: run comparison on one short sample text and only print number of chunks.
 
 ```python
 import json

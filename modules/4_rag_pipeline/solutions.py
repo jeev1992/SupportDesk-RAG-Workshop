@@ -69,6 +69,14 @@ retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 llm = ChatOpenAI(model='gpt-4o-mini', temperature=0, timeout=120, max_retries=3)
 
 def format_docs(docs):
+    """
+    Convert retrieved Document objects into one prompt-ready context string.
+
+    Why this is useful:
+    - Keeps all retrieved evidence in one place for the LLM.
+    - Preserves chunk boundaries with separators for readability.
+    - Reused across many exercises to keep chain assembly concise.
+    """
     return "\n\n---\n\n".join([doc.page_content for doc in docs])
 
 
@@ -198,21 +206,29 @@ print("=" * 80)
 
 def smart_rag(query, vector_store, llm, min_score_threshold=0.7):
     """
-    RAG with intelligent fallbacks based on retrieval confidence
+    RAG with confidence-based fallbacks.
+
+    Strategy:
+    - High confidence (small distance): answer normally with full context.
+    - Medium confidence: return a cautious clarification-style response.
+    - Low confidence: refuse with a safe fallback.
+
+    This pattern prevents overconfident hallucinations on weak retrieval.
     """
-    # Get docs with scores
+    # Retrieve candidate evidence + numeric distances from the vector store.
     docs_with_scores = vector_store.similarity_search_with_score(query, k=3)
     
     if not docs_with_scores:
         return "No relevant tickets found.", "no_results"
     
-    # Lower distance = better match (cosine distance: 0=identical, 1=orthogonal)
+    # Lower distance = better match (cosine distance: 0=identical, 1=orthogonal).
+    # We use the top distance as a lightweight proxy for answer reliability.
     best_distance = docs_with_scores[0][1]
     
     print(f"  Best match distance: {best_distance:.4f}")
     
     if best_distance < 0.5:  # Very relevant
-        # Proceed with RAG
+        # High-confidence path: construct full grounded prompt and answer directly.
         docs = [doc for doc, score in docs_with_scores]
         context = format_docs(docs)
         
@@ -228,10 +244,12 @@ Answer:"""
         return response.content, "high_confidence"
     
     elif best_distance < 1.0:  # Somewhat relevant
+        # Medium-confidence path: avoid overclaiming, ask for confirmation/context.
         ticket_id = docs_with_scores[0][0].metadata['ticket_id']
         return f"Found possibly relevant ticket ({ticket_id}), but confidence is moderate. Would you like me to show details?", "medium_confidence"
     
     else:  # Not relevant
+        # Low-confidence path: safe refusal to avoid unsupported generation.
         return "I don't have relevant ticket history for this question.", "low_confidence"
 
 # Test with different queries
@@ -352,7 +370,7 @@ print("\n" + "=" * 80)
 print("EXERCISE 7: Add Streaming Responses")
 print("=" * 80)
 
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_core.callbacks import StreamingStdOutCallbackHandler
 
 # Create streaming LLM
 streaming_llm = ChatOpenAI(
@@ -428,7 +446,12 @@ conv_chain = (
 )
 
 def ask_with_history(question, history):
-    """Invoke the chain and append the turn to history."""
+    """
+    Execute one conversational turn and persist memory.
+
+    `history` is a mutable list of HumanMessage/AIMessage objects.
+    Appending both user question and assistant answer enables follow-up context.
+    """
     answer = conv_chain.invoke({"question": question, "chat_history": history})
     history.append(HumanMessage(content=question))
     history.append(AIMessage(content=answer))
@@ -457,7 +480,11 @@ print("=" * 80)
 
 def detect_hallucination(query, answer, source_documents, llm):
     """
-    Use LLM-as-judge to check if answer is grounded in sources
+    Use LLM-as-judge to check if an answer is grounded in retrieved sources.
+
+    Practical purpose:
+    - Adds a post-generation QA gate.
+    - Helps flag unsupported claims before returning responses in production.
     """
     source_text = "\n\n".join([doc.page_content for doc in source_documents])
     

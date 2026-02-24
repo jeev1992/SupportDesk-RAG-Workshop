@@ -25,9 +25,10 @@ print("Setting up agent...")
 
 
 class SupportTicketToolsEnhanced:
-    """Enhanced tools with priority search and better error handling."""
+    """Enhanced tools with better error handling and small-patch extensions."""
     
     def __init__(self, tickets_path: str = '../../data/synthetic_tickets.json'):
+        # Load canonical ticket dataset once at startup for all tools.
         with open(tickets_path, 'r', encoding='utf-8') as f:
             self.tickets = json.load(f)
         
@@ -35,6 +36,7 @@ class SupportTicketToolsEnhanced:
         self._setup_vectorstore()
     
     def _setup_vectorstore(self):
+        """Index all tickets into a semantic vector store for similarity retrieval."""
         documents = []
         for ticket in self.tickets:
             content = f"""Ticket ID: {ticket['ticket_id']}
@@ -54,6 +56,7 @@ Priority: {ticket['priority']}"""
             )
             documents.append(doc)
         
+        # Dedicated collection name avoids collisions with other module demos.
         self.vectorstore = Chroma.from_documents(
             documents=documents,
             embedding=self.embeddings,
@@ -64,8 +67,19 @@ Priority: {ticket['priority']}"""
         """Search for similar tickets using semantic similarity."""
         if not query or not query.strip():
             return "Error: Please provide a search query."
-        
-        results = self.vectorstore.similarity_search(query, k=3)
+
+        # Small-patch Exercise 4 behavior:
+        # If the query explicitly asks for critical issues, apply a priority filter
+        # using the existing search tool instead of adding a brand-new tool.
+        if "critical" in query.lower():
+            results = self.vectorstore.similarity_search(
+                query,
+                k=3,
+                filter={"priority": "Critical"}
+            )
+        else:
+            # Semantic retrieval is best for "how to fix" and fuzzy symptom queries.
+            results = self.vectorstore.similarity_search(query, k=3)
         
         if not results:
             return "No similar tickets found."
@@ -84,7 +98,7 @@ Priority: {ticket['priority']}"""
         
         ticket_id = ticket_id.upper().strip()
         
-        # Check format
+        # Validate expected identifier shape before scanning dataset.
         if not ticket_id.startswith("TICK-"):
             return f"Error: Invalid format. Ticket IDs look like TICK-001, TICK-002, etc. You provided: '{ticket_id}'"
         
@@ -108,6 +122,7 @@ Resolved: {ticket['resolved_date']}"""
             return f"Error: Please provide a category. Available: {', '.join(available)}"
         
         category = category.strip()
+        # Simple exact category matching (case-insensitive).
         matching = [t for t in self.tickets if t['category'].lower() == category.lower()]
         
         if not matching:
@@ -120,7 +135,7 @@ Resolved: {ticket['resolved_date']}"""
         
         return output
     
-    # Exercise 4: New priority search tool
+    # Optional reference implementation (not required by small-edit exercise style)
     def search_by_priority(self, priority: str) -> str:
         """Find all tickets with a specific priority level."""
         if not priority or not priority.strip():
@@ -128,6 +143,7 @@ Resolved: {ticket['resolved_date']}"""
             return f"Error: Please provide a priority. Available: {', '.join(available)}"
         
         priority = priority.strip()
+        # Priority filtering supports urgency-focused triage style queries.
         matching = [t for t in self.tickets if t['priority'].lower() == priority.lower()]
         
         if not matching:
@@ -144,6 +160,7 @@ Resolved: {ticket['resolved_date']}"""
         """Get statistics about the ticket database."""
         total = len(self.tickets)
         
+        # Aggregate counts manually for transparency in workshop code.
         categories = {}
         priorities = {}
         for ticket in self.tickets:
@@ -190,14 +207,6 @@ Do NOT use this for searching - only for getting known ticket details."""
 Use when user asks "what X issues have we seen" or "show me all X tickets".
 Categories include: Authentication, Database, Payment, Performance, Email, Mobile.
 Input: Category name (e.g., 'Database', 'Authentication')."""
-            ),
-            Tool(
-                name="SearchByPriority",
-                func=self.search_by_priority,
-                description="""Find all tickets with a specific priority level.
-Use when user asks about urgent, critical, or high priority issues.
-Priority levels: Critical, High, Medium, Low.
-Input: Priority level (e.g., 'Critical', 'High')."""
             ),
             Tool(
                 name="GetTicketStatistics",
@@ -254,7 +263,6 @@ Your tools:
 - SearchSimilarTickets: For troubleshooting and "how to fix" questions
 - GetTicketByID: For looking up specific tickets (TICK-001, etc.)
 - SearchByCategory: For finding all tickets in a category
-- SearchByPriority: For finding tickets by urgency level
 - GetTicketStatistics: For database overview and counts
 """
 
@@ -264,6 +272,7 @@ def run_agent(query: str, max_iterations: int = 5, custom_prompt: str = None) ->
     Run the agent with tracking for evaluation.
     Returns dict with response, tools_used, and iterations.
     """
+    # Allow callers to swap prompts for experimentation while keeping a safe default.
     system_prompt = custom_prompt or CUSTOM_SYSTEM_PROMPT
     
     messages = [
@@ -271,12 +280,14 @@ def run_agent(query: str, max_iterations: int = 5, custom_prompt: str = None) ->
         HumanMessage(content=query)
     ]
     
+    # Track tool trajectory for later evaluation/debugging.
     tools_used = []
     
     for i in range(max_iterations):
         response = llm_with_tools.invoke(messages)
         messages.append(response)
         
+        # Final answer path: model returned plain content with no tool requests.
         if not response.tool_calls:
             return {
                 'response': response.content,
@@ -291,6 +302,7 @@ def run_agent(query: str, max_iterations: int = 5, custom_prompt: str = None) ->
             print(f"🔧 Tool: {tool_name} | Input: {tool_input[:50]}...")
             tools_used.append(tool_name)
             
+            # Resolve and execute requested tool safely via name lookup.
             tool_output = None
             for tool in tools:
                 if tool.name == tool_name:
@@ -300,6 +312,7 @@ def run_agent(query: str, max_iterations: int = 5, custom_prompt: str = None) ->
             if tool_output is None:
                 tool_output = f"Error: Tool {tool_name} not found"
             
+            # Feed tool output back into model context for the next reasoning step.
             messages.append(ToolMessage(
                 content=tool_output,
                 tool_call_id=tool_call["id"]
@@ -324,7 +337,7 @@ test_queries = [
     ("Show me ticket TICK-005", "GetTicketByID"),
     ("What payment issues have we seen?", "SearchByCategory"),
     ("Give me an overview of tickets", "GetTicketStatistics"),
-    ("Show me all critical priority tickets", "SearchByPriority"),  # Exercise 4
+    ("How many critical tickets are there?", "GetTicketStatistics"),  # Exercise 4 small patch
 ]
 
 for query, expected_tool in test_queries:
@@ -397,7 +410,7 @@ error_test_cases = [
     "Get ticket XYZ123",           # Invalid format
     "Get ticket TICK-999",          # Not found
     "Show me category FooBar",      # Invalid category
-    "Search with priority Urgent",  # Invalid priority
+    "Show me critical incidents",   # Priority-aware branch in existing tool
 ]
 
 for query in error_test_cases:
@@ -416,7 +429,12 @@ print("=" * 80)
 conversation_history = []
 
 def chat_with_memory(user_message: str) -> str:
-    """Chat with conversation history maintained."""
+    """
+    Minimal memory-enabled chat loop using explicit message history.
+
+    This demonstrates the core concept (carry prior messages forward) without
+    introducing additional abstractions.
+    """
     global conversation_history
     
     messages = [
@@ -479,7 +497,7 @@ evaluation_cases = [
     {"query": "Show ticket TICK-001", "expected_tool": "GetTicketByID"},
     {"query": "How many tickets?", "expected_tool": "GetTicketStatistics"},
     {"query": "All payment tickets", "expected_tool": "SearchByCategory"},
-    {"query": "Critical priority issues", "expected_tool": "SearchByPriority"},
+    {"query": "How many critical tickets are there?", "expected_tool": "GetTicketStatistics"},
 ]
 
 correct = 0

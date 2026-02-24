@@ -290,6 +290,8 @@ answer = chain.invoke("How do I reset my password?")
 
 ### The LangChain Component Stack
 
+📘 **Read this first (learner-friendly):** [LangChain Component Stack — Learner Guide](langchain_component_stack_guide.md)
+
 LangChain gives you pre-built blocks for each layer. LCEL (the `|` operator) is how you snap them together.
 
 | Layer | Purpose | Classes Used |
@@ -852,6 +854,58 @@ ask_with_history("What's ticket TICK-001?")
 ask_with_history("How was it resolved?")  # Remembers context
 ```
 
+### Method 3B: Conversation Buffer with `RunnableWithMessageHistory` (Recommended)
+
+This is the modern way to implement buffer-style memory in LangChain 1.x.
+Instead of manually appending to a Python list, the wrapper automatically:
+- loads prior messages for a session,
+- injects them into `MessagesPlaceholder`,
+- and stores new user/assistant turns after each call.
+
+```python
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.output_parsers import StrOutputParser
+
+# Session-scoped in-memory history store
+history_store = {}
+
+def get_session_history(session_id: str):
+    return history_store.setdefault(session_id, InMemoryChatMessageHistory())
+
+conv_prompt = ChatPromptTemplate.from_messages([
+    ("system", "Answer using the context: {context}"),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{question}")
+])
+
+base_chain = conv_prompt | llm | StrOutputParser()
+
+chain_with_history = RunnableWithMessageHistory(
+    base_chain,
+    get_session_history,
+    input_messages_key="question",
+    history_messages_key="history",
+)
+
+def ask_with_buffer(question: str, session_id: str = "user-1"):
+    context = format_docs(retriever.invoke(question))
+    return chain_with_history.invoke(
+        {"context": context, "question": question},
+        config={"configurable": {"session_id": session_id}}
+    )
+
+# Multi-turn conversation (same session_id keeps memory)
+ask_with_buffer("What's ticket TICK-001?", session_id="demo")
+ask_with_buffer("How was it resolved?", session_id="demo")
+```
+
+Buffer behavior note:
+- This keeps *all* messages for the session (buffer memory).
+- For production token control, combine with a window policy (keep last N turns)
+  or summary policy (compress older turns).
+
 ## Prompt Engineering for RAG
 
 ### Basic Template
@@ -1183,7 +1237,7 @@ best = max(results, key=lambda x: x.get("confidence", 0))
 ## Streaming Responses
 
 ```python
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_core.callbacks import StreamingStdOutCallbackHandler
 
 streaming_llm = ChatOpenAI(
     streaming=True,
@@ -1205,7 +1259,7 @@ streaming_chain.invoke("What causes performance issues?")
 **Custom streaming:**
 
 ```python
-from langchain.callbacks.base import BaseCallbackHandler
+from langchain_core.callbacks import BaseCallbackHandler
 
 class CustomStreamHandler(BaseCallbackHandler):
     def on_llm_new_token(self, token: str, **kwargs):
@@ -1224,7 +1278,7 @@ llm = ChatOpenAI(
 
 ```python
 def safe_query(question):
-    docs = retriever.get_relevant_documents(question)
+    docs = retriever.invoke(question)
     
     if not docs:
         return "I couldn't find any relevant information for your question."

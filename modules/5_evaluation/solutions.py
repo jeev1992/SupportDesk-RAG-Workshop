@@ -62,7 +62,14 @@ print("✓ Vector store ready")
 
 # RAG function
 def generate_answer(query, k=3):
+    """
+    Execute one retrieve-then-generate pass for a query.
+
+    This baseline function is reused by multiple exercises so that metric
+    differences come from evaluation logic, not different generation pipelines.
+    """
     docs = vector_store.similarity_search(query, k=k)
+    # Concatenate all retrieved evidence into one context block for prompting.
     context = "\n\n".join([doc.page_content for doc in docs])
     
     prompt = f"""Answer the question using ONLY the provided context. Cite ticket IDs.
@@ -92,7 +99,11 @@ print("=" * 80)
 
 def calculate_metrics(retrieved_ids, relevant_ids, k=3):
     """
-    Calculate Precision, Recall, F1 at k
+    Calculate Precision, Recall, and F1 at cutoff k.
+
+    Precision: relevant retrieved / k
+    Recall: relevant retrieved / total relevant
+    F1: harmonic mean of precision and recall
     """
     retrieved_set = set(retrieved_ids[:k])
     relevant_set = set(relevant_ids)
@@ -106,7 +117,7 @@ def calculate_metrics(retrieved_ids, relevant_ids, k=3):
     # Recall: what % of relevant docs were retrieved?
     recall = tp / len(relevant_set) if len(relevant_set) > 0 else 0
     
-    # F1: harmonic mean
+    # F1 punishes imbalance (e.g., high recall but poor precision).
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     
     return {'precision': precision, 'recall': recall, 'f1': f1}
@@ -177,7 +188,12 @@ print("EXERCISE 4: LLM-as-Judge for Groundedness")
 print("=" * 80)
 
 def evaluate_groundedness(answer, context_docs):
-    """Check if answer is supported by context (no hallucinations)"""
+    """
+    Judge factual grounding of the answer using only retrieved context.
+
+    Returns a normalized score and raw judge output so you can debug
+    both the metric value and the rationale behind it.
+    """
     context = "\n\n".join([doc.page_content for doc in context_docs])
     
     prompt = f"""Evaluate if the ANSWER is fully supported by the CONTEXT.
@@ -203,6 +219,7 @@ Format: Score: X / Reason: <explanation>"""
     
     output = response.choices[0].message.content
     try:
+        # Parse "Score: X / ..." pattern; if malformed, use neutral fallback.
         score = float(output.split('Score:')[1].split('/')[0].strip()) / 10
     except:
         score = 0.5
@@ -230,7 +247,12 @@ print("EXERCISE 5: LLM-as-Judge for Completeness")
 print("=" * 80)
 
 def evaluate_completeness(question, answer, reference_answer=None):
-    """Check if answer fully addresses the question"""
+    """
+    Judge whether the answer fully addresses the question.
+
+    If a reference answer is provided, the judge can compare coverage quality
+    against an expected response, making the score more stable.
+    """
     ref_section = f"\nREFERENCE ANSWER:\n{reference_answer}" if reference_answer else ""
     
     prompt = f"""Evaluate if the ANSWER fully addresses the QUESTION.
@@ -257,6 +279,7 @@ Format: Score: X / Reason: <explanation>"""
     
     output = response.choices[0].message.content
     try:
+        # Same parser contract as groundedness keeps metric handling consistent.
         score = float(output.split('Score:')[1].split('/')[0].strip()) / 10
     except:
         score = 0.5
@@ -283,7 +306,14 @@ print("EXERCISE 6: Failure Analysis")
 print("=" * 80)
 
 def analyze_failures(eval_queries, vector_store, threshold=0.5):
-    """Find and analyze queries with poor retrieval"""
+    """
+    Find and group retrieval failures below a precision threshold.
+
+    This turns raw scores into actionable debugging signals by surfacing:
+    - which exact queries failed,
+    - what was expected vs retrieved,
+    - and which categories fail most often.
+    """
     failures = []
     
     for query in eval_queries:
@@ -300,7 +330,8 @@ def analyze_failures(eval_queries, vector_store, threshold=0.5):
                 'category': query.get('category', 'Unknown')
             })
     
-    # Group by category
+    # Grouping by category helps prioritize targeted improvements.
+    # Example: if Authentication dominates failures, improve terms/chunks there.
     by_category = defaultdict(list)
     for f in failures:
         by_category[f['category']].append(f)
@@ -396,6 +427,9 @@ for i, query in enumerate(eval_queries[:5], 1):
         'completeness': completeness['score']
     })
 
+avg_precision = np.mean([m['precision'] for m in retrieval_metrics])
+release_signal = "PASS" if avg_precision >= 0.80 else ("REVIEW" if avg_precision >= 0.70 else "BLOCK")
+
 # Print report
 print(f"""
 ┌─────────────────────────────────────────────────────────────┐
@@ -409,6 +443,7 @@ print(f"""
 │ GENERATION LAYER                                            │
 │   • Groundedness: {np.mean([m['groundedness'] for m in generation_metrics]):.4f}                                       │
 │   • Completeness: {np.mean([m['completeness'] for m in generation_metrics]):.4f}                                       │
+│   • Release Signal (Precision): {release_signal:<8}                           │
 └─────────────────────────────────────────────────────────────┘
 """)
 

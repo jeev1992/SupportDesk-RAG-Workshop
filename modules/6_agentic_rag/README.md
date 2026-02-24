@@ -22,14 +22,32 @@ This module demonstrates how to build intelligent agents that use RAG as one of 
 
 ## Quick Start
 
-### 1. Ensure Dependencies are Installed
+### 1. Use Python 3.12 and activate the workshop virtual environment
+
+**Windows (PowerShell):**
+
+```powershell
+py -3.12 -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Activate.ps1
+python --version   # should show 3.12.x
+```
+
+**macOS/Linux:**
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python --version   # should show 3.12.x
+```
+
+### 2. Ensure Dependencies are Installed
 
 ```bash
 # From the workshop root directory
 pip install -r requirements.txt
 ```
 
-### 2. Set Up Environment Variables
+### 3. Set Up Environment Variables
 
 Make sure your `.env` file in the project root contains:
 ```
@@ -38,7 +56,7 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_CHAT_MODEL=gpt-4o-mini
 ```
 
-### 3. Run the Demo
+### 4. Run the Demo
 
 ```bash
 cd modules/6_agentic_rag
@@ -207,7 +225,7 @@ See [`exercises.md`](exercises.md) for 10+ hands-on exercises ranging from begin
 - Refine system prompt with clearer guidelines
 
 ### Memory Issues / Token Limits
-- Use `ConversationSummaryMemory` instead of buffer
+- Use `RunnableWithMessageHistory` with windowed or summary-style history
 - Limit conversation history
 - Consider truncating old messages
 

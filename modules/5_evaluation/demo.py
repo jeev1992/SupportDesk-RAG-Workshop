@@ -105,7 +105,12 @@ print("✓ Vector store built with Chroma")
 
 # Create simple RAG function
 def generate_answer(query, k=3):
-    """Retrieve context and generate answer"""
+    """
+    Retrieve top-k supporting documents and generate a grounded answer.
+
+    This helper centralizes the "retrieve + generate" path used by both
+    retrieval and generation evaluations, ensuring consistent behavior.
+    """
     # Retrieve documents
     docs = vector_store.similarity_search(query, k=k)
     
@@ -151,6 +156,7 @@ def calculate_retrieval_metrics(retrieved_ids, relevant_ids, k=3):
     Recall@k = (relevant docs in top-k) / (total relevant docs)
     F1@k = harmonic mean of Precision and Recall
     """
+    # Restrict to top-k because retrieval quality is rank-sensitive.
     retrieved_set = set(retrieved_ids[:k])
     relevant_set = set(relevant_ids)
     
@@ -256,6 +262,7 @@ def evaluate_groundedness(answer, context_docs):
     
     Returns: score 0.0-1.0 (higher = more grounded)
     """
+    # Judge receives ONLY retrieved evidence to test faithfulness.
     context = "\n\n".join([doc.page_content for doc in context_docs])
     
     prompt = f"""Evaluate if the ANSWER is fully supported by the CONTEXT. Check for hallucinations or unsupported claims.
@@ -267,11 +274,6 @@ ANSWER:
 {answer}
 
 Rate the groundedness from 0 to 10:
-- 10: Every claim in the answer is directly supported by the context
-- 7-9: Most claims supported, minor unsupported details
-- 4-6: Some claims supported, some speculation or external knowledge
-- 1-3: Little support from context, mostly hallucinated
-- 0: Completely hallucinated, no relation to context
 
 Provide:
 1. Score (0-10)
@@ -314,6 +316,7 @@ def evaluate_completeness(question, answer, reference_answer=None):
     
     Returns: score 0.0-1.0 (higher = more complete)
     """
+    # If a reference answer exists, completeness becomes relative to ideal coverage.
     if reference_answer:
         prompt = f"""Evaluate if the ANSWER fully addresses the QUESTION compared to the REFERENCE ANSWER.
 
@@ -327,11 +330,6 @@ GENERATED ANSWER:
 {answer}
 
 Rate the completeness from 0 to 10:
-- 10: Fully answers all aspects of the question (as good as reference)
-- 7-9: Answers most parts, minor gaps
-- 4-6: Partial answer, missing key information
-- 1-3: Minimal answer, major gaps
-- 0: Does not answer the question
 
 Provide:
 1. Score (0-10)
@@ -350,11 +348,6 @@ ANSWER:
 {answer}
 
 Rate the completeness from 0 to 10:
-- 10: Fully answers all aspects of the question
-- 7-9: Answers most parts, minor gaps
-- 4-6: Partial answer, missing key information
-- 1-3: Minimal answer, major gaps
-- 0: Does not answer the question
 
 Provide:
 1. Score (0-10)
@@ -478,30 +471,69 @@ print(f"""
 INTERPRETATION:
 """)
 
-# Provide diagnostic feedback
-if avg_precision < 0.70:
-    print("⚠ Low Precision → Too much noise in retrieval")
-    print("  Fix: Improve chunking, use metadata filtering, or increase similarity threshold")
+# ── Failure Pattern Playbook ─────────────────────────────────────────────────
+# Match metrics against the four named diagnostic patterns.
+if avg_precision >= 0.75 and avg_recall < 0.60:
+    print("⚠ PATTERN A — High Precision, Low Recall")
+    print("  Retrieval is too conservative: correct docs found but many missed.")
+    print("  Fix: Increase k, use smaller chunks, expand query with synonyms.")
 
-if avg_recall < 0.60:
-    print("⚠ Low Recall → Missing relevant documents")
-    print("  Fix: Increase k, improve embedding model, or use hybrid retrieval")
+if avg_precision < 0.60 and avg_recall >= 0.75:
+    print("⚠ PATTERN B — Low Precision, High Recall")
+    print("  Too many irrelevant docs entering the result set.")
+    print("  Fix: Use MMR, add metadata filters, improve embeddings.")
 
-if avg_f1 < 0.65:
-    print("⚠ Low F1 → Overall retrieval quality needs improvement")
-    print("  Fix: Balance precision and recall by tuning retrieval parameters")
+if avg_f1 >= 0.75 and (avg_groundedness < 0.70 or avg_completeness < 0.65):
+    print("⚠ PATTERN C — Strong Retrieval, Weak Generation")
+    print("  Right documents retrieved but LLM is not using them well.")
+    print("  Fix: Strengthen prompt, add few-shot examples, use stronger LLM.")
 
 if avg_groundedness < 0.70:
-    print("⚠ Low Groundedness → System is hallucinating")
-    print("  Fix: Strengthen prompt instructions, use stricter grounding, or improve context quality")
+    print("⚠ PATTERN D — Low Groundedness (Hallucination Risk)")
+    print("  LLM is generating claims not supported by retrieved context.")
+    print("  Fix: Stricter grounding prompt, temperature=0, require ticket citations.")
 
-if avg_completeness < 0.65:
-    print("⚠ Low Completeness → Answers are incomplete")
-    print("  Fix: Retrieve more context (increase k), improve prompt, or use better LLM")
+# ── Release Gate ──────────────────────────────────────────────────────────────
+# Determines whether this build should be deployed, reviewed, or blocked.
+thresholds = {
+    'precision':    {'pass': 0.80, 'review': 0.70},
+    'recall':       {'pass': 0.70, 'review': 0.60},
+    'f1':           {'pass': 0.75, 'review': 0.65},
+    'groundedness': {'pass': 0.85, 'review': 0.75},
+    'completeness': {'pass': 0.75, 'review': 0.65},
+}
+current_metrics = {
+    'precision': avg_precision, 'recall': avg_recall, 'f1': avg_f1,
+    'groundedness': avg_groundedness, 'completeness': avg_completeness,
+}
+red_flags, yellow_flags = [], []
+for metric, value in current_metrics.items():
+    t = thresholds[metric]
+    if value < t['review']:
+        red_flags.append(f"{metric} = {value:.2f} (min {t['review']})")
+    elif value < t['pass']:
+        yellow_flags.append(f"{metric} = {value:.2f} (target {t['pass']})")
 
-if all([avg_precision >= 0.80, avg_recall >= 0.70, avg_f1 >= 0.75, 
-        avg_groundedness >= 0.80, avg_completeness >= 0.75]):
-    print("✓ All metrics in target range - System is production-ready!")
+if red_flags:
+    decision = "BLOCK  — Do not deploy. Fix critical metrics first."
+elif yellow_flags:
+    decision = "REVIEW — Investigate before deploying."
+else:
+    decision = "PASS   — All metrics in target range. Ready to deploy."
+
+print("\n" + "-"*60)
+print("RELEASE GATE DECISION")
+print("-"*60)
+print(f"  {decision}")
+if red_flags:
+    print("\n  Critical (RED):")
+    for f in red_flags:
+        print(f"    ✗ {f}")
+if yellow_flags:
+    print("\n  Warning (YELLOW):")
+    for f in yellow_flags:
+        print(f"    ⚠ {f}")
+print("-"*60)
 
 # ============================================================================
 # PART 5: Comparing Different RAG Configurations
@@ -513,7 +545,12 @@ print("="*80)
 print("\nExample: Compare retrieval with k=3 vs k=5")
 
 def compare_configurations(queries, k_values):
-    """Compare different retrieval configurations"""
+    """
+    Compare retrieval settings (e.g., different k values) on the same query set.
+
+    This is a lightweight A/B harness that helps choose configuration defaults
+    based on measured precision/recall/F1 instead of intuition.
+    """
     results = {}
     
     for k in k_values:

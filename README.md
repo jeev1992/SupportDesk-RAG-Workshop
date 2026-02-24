@@ -19,9 +19,9 @@ This comprehensive workshop teaches you to build a production-ready Retrieval-Au
 ## 🚀 Quick Start
 
 ### 1. Install Python (one-time)
-- Install Python **3.11 or 3.12** (recommended: **3.12**) from https://www.python.org/downloads/
+- Install Python **3.12.x only** from https://www.python.org/downloads/
 - During install on Windows, enable **"Add Python to PATH"**
-- ⚠️ **Python 3.13 and 3.14 are not yet supported** — `chromadb` depends on Pydantic V1 internals that were removed in Python 3.13+. Use 3.12.
+- ⚠️ **Python 3.13 and 3.14 are not supported** — `chromadb` depends on Pydantic V1 internals that were removed in Python 3.13+.
 
 ### 2. Clone or open this repo
 ```bash
@@ -34,12 +34,12 @@ cd SupportDesk-RAG-Workshop
 
 **Windows (PowerShell):**
 ```powershell
-python -m venv .venv
+py -3.12 -m venv .venv
 ```
 
 **macOS/Linux:**
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 ```
 
 ### 4. Activate the virtual environment
@@ -304,7 +304,7 @@ See [OpenAI Pricing](https://openai.com/pricing) for current rates.
 
 ## 🎯 Prerequisites
 
-- Python 3.11 or 3.12 (recommended: 3.12) — **not 3.13/3.14**
+- Python 3.12.x — **not 3.13/3.14**
 - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 - Basic understanding of Python
 - Familiarity with APIs (helpful but not required)
@@ -335,7 +335,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 Use:
 ```powershell
 py --version
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 ```
 
 ### OpenAI API Errors

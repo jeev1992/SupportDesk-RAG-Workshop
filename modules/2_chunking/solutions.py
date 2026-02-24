@@ -9,6 +9,7 @@ Run each section independently or the whole file.
 
 import json
 import os
+import time
 from langchain_text_splitters import (
     CharacterTextSplitter,
     RecursiveCharacterTextSplitter
@@ -272,8 +273,30 @@ print("=" * 80)
 
 import shutil
 if os.path.exists("./solution_chroma_db"):
-    shutil.rmtree("./solution_chroma_db")
-    print("✓ Cleaned up solution_chroma_db")
+    # On Windows, Chroma files can stay locked briefly after queries.
+    # Release references and retry cleanup once.
+    try:
+        del loaded_store
+    except Exception:
+        pass
+    try:
+        del chroma_store
+    except Exception:
+        pass
+
+    cleaned = False
+    for _ in range(2):
+        try:
+            shutil.rmtree("./solution_chroma_db")
+            cleaned = True
+            break
+        except PermissionError:
+            time.sleep(1)
+
+    if cleaned:
+        print("✓ Cleaned up solution_chroma_db")
+    else:
+        print("⚠ Could not fully clean solution_chroma_db (file lock). You can delete it manually later.")
 
 
 # ============================================================================

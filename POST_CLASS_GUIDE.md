@@ -4,6 +4,18 @@ Congratulations on completing the SupportDesk-RAG workshop! 🎉
 
 You've just built a complete, production-ready RAG system from scratch. Here's what you accomplished and where to go from here.
 
+## ⚙️ Environment Note (Important)
+
+- Use **Python 3.12.x only** for this workshop environment.
+- **Do not use Python 3.13/3.14** with these materials (`chromadb` + Pydantic V1 compatibility issue).
+- If needed, recreate your environment with Python 3.12:
+
+```powershell
+py -3.12 -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Activate.ps1
+python --version
+```
+
 ---
 
 ## 🎯 What You've Built

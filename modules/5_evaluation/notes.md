@@ -383,45 +383,51 @@ def comprehensive_evaluation(question, answer, context_docs, reference):
 | Groundedness | >0.85 | <0.75 | <0.60 |
 | Completeness | >0.75 | <0.65 | <0.50 |
 
-### Interpreting Results
+### Failure Pattern Playbook
 
-**High Precision, Low Recall:**
+Use this diagnostic guide to identify which pattern your system matches, then apply the targeted fixes.
+
+**Pattern A — High Precision, Low Recall:**
 ```
-Problem: Too conservative, missing relevant docs
-Solution: 
+Symptom:  Precision@K > 0.80 but Recall@K < 0.60
+Meaning:  Retrieval is too conservative — finding correct docs but missing many
+Fixes:
 - Increase k (retrieve more docs)
-- Improve chunking (smaller chunks)
-- Enhance query (add synonyms)
+- Use smaller chunks so relevant content isn't buried
+- Expand the query with synonyms or rephrasing
 ```
 
-**Low Precision, High Recall:**
+**Pattern B — Low Precision, High Recall:**
 ```
-Problem: Too many irrelevant docs
-Solution:
-- Use MMR for diversity
-- Add metadata filters
-- Improve embeddings
-- Use hybrid search
-```
-
-**High Retrieval, Low Generation:**
-```
-Problem: Right docs, wrong answer
-Solution:
-- Improve prompt engineering
-- Use better LLM
-- Add few-shot examples
-- Implement verification step
+Symptom:  Precision@K < 0.60 but Recall@K > 0.80
+Meaning:  Too many irrelevant docs entering the result set
+Fixes:
+- Use MMR (Maximal Marginal Relevance) for diversity
+- Add metadata filters (category, priority)
+- Improve embeddings or similarity threshold
+- Use hybrid search (keyword + semantic)
 ```
 
-**Low Groundedness:**
+**Pattern C — Strong Retrieval, Weak Generation:**
 ```
-Problem: Hallucinations
-Solution:
-- Stronger grounding prompts
-- Lower temperature (0)
-- Add source citation requirement
-- Implement verification
+Symptom:  F1@K > 0.75 but Groundedness < 0.70 or Completeness < 0.65
+Meaning:  Right documents retrieved but the LLM isn't using them well
+Fixes:
+- Strengthen prompt engineering (stricter grounding instructions)
+- Add few-shot examples to the prompt
+- Use a stronger LLM for generation
+- Add an explicit verification step
+```
+
+**Pattern D — Low Groundedness:**
+```
+Symptom:  Groundedness < 0.70 regardless of retrieval quality
+Meaning:  LLM is hallucinating — generating claims not in the context
+Fixes:
+- Add stricter grounding prompts ("only use the provided context")
+- Set temperature = 0
+- Require inline ticket ID citations
+- Add a hallucination detection verification step
 ```
 
 ## A/B Testing Different Configurations
@@ -518,10 +524,53 @@ for name, metrics in results.items():
 ```
 Config          P@K      R@K      F1       Ground   Complete
 ------------------------------------------------------------
-baseline        0.600    0.750    0.667    0.750    0.650   
-hybrid          0.667    0.833    0.741    0.780    0.680   
-optimized       0.733    0.867    0.793    0.850    0.750   
+baseline        0.600    0.750    0.667    0.750    0.650
+hybrid          0.667    0.833    0.741    0.780    0.680
+optimized       0.733    0.867    0.793    0.850    0.750
 ```
+
+### Release Gate
+
+Use these thresholds as a deployment gate. One RED metric blocks the release; any YELLOW triggers a mandatory review before deploying.
+
+| Metric | PASS (Green) | REVIEW (Yellow) | BLOCK (Red) |
+|--------|-------------|----------------|-------------|
+| Precision@3 | ≥ 0.80 | 0.70 – 0.79 | < 0.70 |
+| Recall@3 | ≥ 0.70 | 0.60 – 0.69 | < 0.60 |
+| F1@3 | ≥ 0.75 | 0.65 – 0.74 | < 0.65 |
+| Groundedness | ≥ 0.85 | 0.75 – 0.84 | < 0.75 |
+| Completeness | ≥ 0.75 | 0.65 – 0.74 | < 0.65 |
+
+```python
+def get_release_decision(metrics):
+    """Returns PASS, REVIEW, or BLOCK based on evaluation metrics."""
+    thresholds = {
+        'precision':    {'pass': 0.80, 'review': 0.70},
+        'recall':       {'pass': 0.70, 'review': 0.60},
+        'f1':           {'pass': 0.75, 'review': 0.65},
+        'groundedness': {'pass': 0.85, 'review': 0.75},
+        'completeness': {'pass': 0.75, 'review': 0.65},
+    }
+    red_flags, yellow_flags = [], []
+    for metric, value in metrics.items():
+        t = thresholds.get(metric)
+        if t is None:
+            continue
+        if value < t['review']:
+            red_flags.append(f"{metric} = {value:.2f} (min {t['review']})")
+        elif value < t['pass']:
+            yellow_flags.append(f"{metric} = {value:.2f} (target {t['pass']})")
+    if red_flags:
+        return 'BLOCK', red_flags
+    elif yellow_flags:
+        return 'REVIEW', yellow_flags
+    return 'PASS', []
+```
+
+**Decision rules:**
+- **PASS** → All metrics green → Deploy with confidence
+- **REVIEW** → One or more yellow metrics → Investigate before deploying
+- **BLOCK** → Any metric red → Fix before deploying
 
 ## Automated Evaluation Pipeline
 

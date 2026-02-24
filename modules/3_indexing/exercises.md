@@ -1,5 +1,7 @@
 # Indexing Strategies Exercises
 
+> ✅ **Exercise style for this workshop:** keep each solution to a **small edit** (usually 3–15 lines) in existing files.
+
 ## Exercise 1: Change the Query (Easy)
 
 **Task**: Modify the demo to search for a different type of issue.
@@ -86,9 +88,10 @@ print(f"Result: {keyword_response.response}")
 
 ## Exercise 5: Compare Index Types Side-by-Side (Medium)
 
-**Task**: Run the same query through all index types and compare.
+**Task**: Run the same query through two index types and compare with minimal edits.
 
-**Copy and run this code**:
+In existing code, add 1-2 test queries and compare `Vector` vs `Keyword` outputs only.
+Reference snippet:
 ```python
 import json
 import os
@@ -151,9 +154,14 @@ for query in test_queries:
 
 ## Exercise 6: Save and Load an Index (Medium)
 
-**Task**: Persist a Vector Index to disk and reload it.
+**Task**: Persist and reload index with a small patch.
 
-**Copy and run this code**:
+In your existing vector-index block, add:
+1. one `persist(...)` call
+2. one `load_index_from_storage(...)` block
+3. one verification query
+
+Reference snippet:
 ```python
 import json
 import os
@@ -204,9 +212,17 @@ print(f"Result: {response}")
 
 ## Exercise 7: Add Metadata Filtering (Medium)
 
-**Task**: Filter search results by category.
+**Task**: Filter search results by category with one filter object.
 
-**Copy and complete this code** (the filter is already filled in):
+Add this to your current query flow:
+
+```python
+filters = MetadataFilters(filters=[
+    ExactMatchFilter(key="category", value="Authentication")
+])
+```
+
+Reference snippet:
 ```python
 import json
 import os
@@ -259,9 +275,10 @@ print(f"  {filtered_response}")
 
 ## Exercise 8: Benchmark Index Build Time (Medium)
 
-**Task**: Measure how long it takes to build each index type.
+**Task**: Measure build time with a tiny timing patch.
 
-**Copy and run this code**:
+Add `time.time()` around index construction for at least two indexes.
+Reference snippet:
 ```python
 import json
 import time
@@ -318,6 +335,8 @@ print(f"→ Summary Index is just storing documents (work happens at query time)
 ## Bonus Exercise: Simple Hybrid Search (Challenge)
 
 **Task**: Combine Vector and Keyword search results.
+
+Small-edit option: combine only top-2 results from each retriever and deduplicate ticket IDs.
 
 **Copy and run this code**:
 ```python

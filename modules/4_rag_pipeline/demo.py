@@ -241,6 +241,15 @@ print("="*80)
 # Helper function to format retrieved documents
 # This concatenates all retrieved document contents into a single context string
 def format_docs(docs):
+    """
+    Convert a list of LangChain Document objects into a single context string.
+
+    Why this helper exists:
+    - Retrievers return `List[Document]` objects.
+    - Prompt templates expect plain strings for `{context}`.
+    - Joining with separators keeps boundaries visible to the LLM.
+    """
+    # Keep document boundaries explicit so the model can attribute facts by chunk.
     return "\n\n---\n\n".join([doc.page_content for doc in docs])
 
 if llm:
@@ -321,7 +330,16 @@ print("="*80)
 
 def rag_with_validation(query, retriever, llm, min_similarity_score=0.5):
     """
-    RAG pipeline with additional validation and fallback
+        RAG pipeline with additional validation and fallback.
+
+        Validation rule in this demo:
+        - Use vector distance as a confidence proxy.
+        - If the nearest document is too far away (distance > threshold),
+            return a safe fallback instead of forcing an answer.
+
+        Note:
+        - Chroma cosine distance is lower for better matches.
+        - This is a simple, practical guardrail for anti-hallucination behavior.
     """
     # Retrieve documents with scores
     docs_with_scores = vector_store.similarity_search_with_score(query, k=3)
@@ -331,7 +349,8 @@ def rag_with_validation(query, retriever, llm, min_similarity_score=0.5):
     for doc, score in docs_with_scores:
         print(f"  - {doc.metadata['ticket_id']}: {score:.4f}")
 
-    # Check if best match is good enough
+    # Use the closest retrieved document as the confidence anchor.
+    # If even the best match is weak, the whole answer should be treated as risky.
     best_score = docs_with_scores[0][1]
 
     # Cosine distance: lower = more similar. 0.5 means cosine_similarity < 0.5 — too weak to answer.
@@ -339,15 +358,17 @@ def rag_with_validation(query, retriever, llm, min_similarity_score=0.5):
         print(f"\n⚠ Best match distance ({best_score:.4f}) exceeds threshold ({min_similarity_score}) — too dissimilar to answer confidently")
         return "I don't have enough relevant information in the ticket history to answer that question confidently."
     
-    # If good matches, proceed with RAG
+    # If we pass the confidence gate, build context and ask the model normally.
     docs = [doc for doc, score in docs_with_scores]
     context = "\n\n---\n\n".join([doc.page_content for doc in docs])
     
     prompt = f"""{prompt_template.replace('{context}', context).replace('{question}', query)}"""
     
     if llm:
-        response = llm.predict(prompt)
-        return response
+        # Use chat-model invocation directly and normalize return type to string.
+        # `ChatOpenAI.invoke(...)` returns an AIMessage object in modern LangChain.
+        response = llm.invoke(prompt)
+        return response.content if hasattr(response, "content") else str(response)
     else:
         return "(LLM not configured)"
 

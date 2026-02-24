@@ -1,5 +1,6 @@
 .env
 .venv/
+pdf_pages/
 venv/
 rag_vectorstore/
 chroma_db/

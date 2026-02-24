@@ -2,6 +2,8 @@
 
 Complete these exercises after studying `demo.py`. Solutions are in `solutions.py`.
 
+> ✅ **Exercise style for this workshop:** finish each task with **small edits** to existing files (typically 3–15 lines). Avoid creating new large scripts.
+
 ---
 
 ## Easy Exercises (Start Here!)
@@ -72,37 +74,17 @@ Tool(
 
 ---
 
-### Exercise 4: Add a Priority Search Tool
+### Exercise 4: Add Priority Support (Small Patch)
 
-**Task**: Add a new tool that filters tickets by priority.
+**Task**: Add priority handling with minimal changes (no new class/file).
 
-**In tools.py, add this method to the SupportTicketTools class:**
+**In `tools.py`, pick one existing tool and add a small priority-aware branch.**
+
+Example patch:
 ```python
-def search_by_priority(self, priority: str) -> str:
-    """Find all tickets with a specific priority level."""
-    priority = priority.strip().capitalize()
-    matching = [t for t in self.tickets if t['priority'].lower() == priority.lower()]
-    
-    if not matching:
-        available = list(set(t['priority'] for t in self.tickets))
-        return f"No tickets with priority '{priority}'. Available: {', '.join(available)}"
-    
-    output = f"Found {len(matching)} tickets with {priority} priority:\n\n"
-    for ticket in matching:
-        output += f"• [{ticket['ticket_id']}] {ticket['title']} ({ticket['category']})\n"
-    
-    return output
-```
-
-**Then add it to get_tools():**
-```python
-Tool(
-    name="SearchByPriority",
-    func=self.search_by_priority,
-    description="""Find all tickets with a specific priority level.
-    Input should be: Critical, High, Medium, or Low.
-    Use when user asks about urgent/important issues or priority levels."""
-)
+if "critical" in query.lower():
+    docs = vector_store.similarity_search(query, k=3, filter={"priority": "Critical"})
+    return format_results(docs)
 ```
 
 **Test with**: "Show me all critical priority tickets"
@@ -161,16 +143,10 @@ ALWAYS follow these rules:
 
 ### Exercise 7: Interactive Conversation Loop
 
-**Task**: Build an interactive chat with the agent.
+**Task**: Use a tiny in-file loop for quick testing (no new file).
 
-**Create a new file `chat.py`:**
+**Add this at the bottom of `demo.py` temporarily:**
 ```python
-from demo import run_agent
-
-print("=" * 60)
-print("Support Assistant (type 'quit' to exit)")
-print("=" * 60)
-
 while True:
     user_input = input("\nYou: ").strip()
     
@@ -181,10 +157,11 @@ while True:
     if not user_input:
         continue
     
-    print("\nThinking...")
     response = run_agent(user_input)
     print(f"\nAssistant: {response}")
 ```
+
+Keep the loop under ~12 lines.
 
 **Test conversation**:
 1. "What authentication issues have we seen?"
@@ -225,53 +202,11 @@ def get_ticket_by_id(self, ticket_id: str) -> str:
 
 ### Bonus: Conversation with Memory
 
-**Task**: Build a conversational agent that remembers context.
+**Task**: Reuse existing memory code in `demo.py` and change only one setting.
 
-**Create `conversational_chat.py`:**
 ```python
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from tools import SupportTicketTools
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Setup
-llm = ChatOpenAI(model=os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'), temperature=0)
-tool_manager = SupportTicketTools()
-tools = tool_manager.get_tools()
-
-# ... bind tools (copy from demo.py)
-
-# Maintain conversation history across turns
-conversation_history = []
-
-def chat(user_message):
-    """Process a message with full conversation memory."""
-    global conversation_history
-    
-    # Add user message to history
-    conversation_history.append(HumanMessage(content=user_message))
-    
-    # Create full message list with system prompt
-    messages = [
-        SystemMessage(content="You are a support assistant with memory of our conversation.")
-    ] + conversation_history
-    
-    # Run agent loop with tools...
-    # Add assistant response to history
-    # Return response
-
-# Interactive loop
-print("Conversational Support Agent")
-while True:
-    user_input = input("\nYou: ").strip()
-    if user_input.lower() in ['quit', 'exit']:
-        break
-    
-    response = chat(user_input)
-    print(f"\nAssistant: {response}")
+# In Part 8, change the window size from k=2 to k=1 and compare behavior.
+apply_window(session_id, k_turns=1)
 ```
 
 **Test this conversation flow**:
@@ -283,7 +218,7 @@ while True:
 
 ### Bonus: Agent Evaluation
 
-**Task**: Measure agent performance on a test set.
+**Task**: Add a tiny manual evaluation pass (no framework build).
 
 ```python
 test_cases = [
@@ -304,15 +239,125 @@ test_cases = [
     }
 ]
 
-def evaluate_agent(test_cases):
-    results = []
-    for test in test_cases:
-        # Run agent, track which tool was called
-        # Check if expected_tool was used
-        # Check if response contains expected keywords
-        pass
-    
-    return results
+for test in test_cases:
+    response = run_agent(test["query"])
+    print(test["query"])
+    print(response[:150])
+```
+
+Goal: observe behavior quickly without writing a full evaluator.
+
+---
+
+### Exercise 9: Memory Type Comparison
+
+**Task**: Observe how windowed history with `RunnableWithMessageHistory` affects what the agent remembers.
+
+```python
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+store = {}
+
+def get_history(session_id: str):
+    return store.setdefault(session_id, InMemoryChatMessageHistory())
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are SupportDesk AI."),
+    MessagesPlaceholder("history"),
+    ("human", "{question}"),
+])
+
+chain_with_history = RunnableWithMessageHistory(
+    prompt | llm,
+    get_history,
+    input_messages_key="question",
+    history_messages_key="history",
+)
+
+def apply_window(session_id: str, k_turns: int = 2):
+    history = store[session_id]
+    history.messages = history.messages[-(k_turns * 2):]
+
+# Simulate 4 conversation turns
+turns = [
+    ("What authentication issues have we seen?",   "TICK-001 reports login failures after password reset."),
+    ("How was TICK-001 resolved?",                  "Sessions were cleared and users forced to re-authenticate."),
+    ("Are there any database issues?",              "TICK-002 covers database connection timeouts."),
+    ("What was the fix for that?",                  "Increased connection pool size and added retry logic."),
+]
+
+session_id = "window-demo"
+for human, _ in turns:
+    chain_with_history.invoke(
+        {"question": human},
+        config={"configurable": {"session_id": session_id}},
+    )
+    apply_window(session_id, k_turns=2)
+
+# Inspect what's actually in memory
+messages = store[session_id].messages
+print(f"Messages retained: {len(messages)}")
+for msg in messages:
+    print(f"  [{type(msg).__name__}] {msg.content[:80]}")
+```
+
+**Questions**:
+- How many messages are retained with `k_turns=2`?
+- Which turn was dropped first?
+- Change `k_turns=1` — what happens to the agent's ability to answer "What was the fix for that?"
+
+---
+
+### Exercise 10: Hybrid Routing
+
+**Task**: Complete only the TODO body (about 6–10 lines).
+
+```python
+import re
+
+def route_query(query: str) -> str:
+    """
+    Return 'direct' for simple lookups, 'agentic' for complex reasoning.
+
+    Direct signals:  specific ticket ID (TICK-XXX), statistics/overview requests
+    Agentic signals: how-to-fix, why, compare, multi-step queries
+    """
+    # TODO: implement routing logic using 2-3 regex checks
+    pass
+
+# Test your router
+test_cases = [
+    ("Show me TICK-003",                         "direct"),
+    ("How many tickets are there?",              "direct"),
+    ("How do I fix authentication failures?",    "agentic"),
+    ("Find all critical issues and compare",     "agentic"),
+    ("Why does the dashboard load slowly?",      "agentic"),
+]
+
+print(f"{'Query':<48} {'Expected':<10} {'Got':<10} {'Match'}")
+print("-" * 75)
+for query, expected in test_cases:
+    got = route_query(query) or "not implemented"
+    match = "✓" if got == expected else "✗"
+    print(f"{query:<48} {expected:<10} {got:<10} {match}")
+```
+
+**Extension**: Replace the regex heuristic with a one-shot LLM classifier:
+```python
+def route_query_llm(query: str, llm) -> str:
+    """Use an LLM to classify the query."""
+    prompt = f"""Classify this support query as 'direct' or 'agentic'.
+
+Direct: simple ticket lookup by ID, statistics, or a single-retrieval question.
+Agentic: troubleshooting, multi-step reasoning, comparisons, or complex analysis.
+
+Query: {query}
+
+Answer with exactly one word — direct or agentic:"""
+    result = llm.invoke(prompt).content.strip().lower()
+    return result if result in ('direct', 'agentic') else 'direct'
 ```
 
 ---
