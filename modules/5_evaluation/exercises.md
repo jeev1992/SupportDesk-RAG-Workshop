@@ -94,37 +94,9 @@ for k in [1, 3, 5, 10]:
 
 ---
 
-### Exercise 4: Calculate Average Precision
-
-**Task**: Implement Average Precision (AP), which considers ranking order.
-
-```python
-def average_precision(retrieved_ids, relevant_ids):
-    """
-    AP = average of precision@k for all k where a relevant doc is found
-    Higher score = relevant docs appear earlier in results
-    """
-    precisions = []
-    relevant_count = 0
-    
-    for k, doc_id in enumerate(retrieved_ids, 1):
-        if doc_id in relevant_ids:
-            relevant_count += 1
-            precision_at_k = relevant_count / k
-            precisions.append(precision_at_k)
-    
-    return np.mean(precisions) if precisions else 0.0
-```
-
-**Test**:
-- `retrieved=['A', 'B', 'C']`, `relevant=['A', 'C']` → AP = (1.0 + 0.67) / 2 = 0.83
-- `retrieved=['B', 'A', 'C']`, `relevant=['A', 'C']` → AP = (0.5 + 0.67) / 2 = 0.58
-
----
-
 ## Medium Exercises
 
-### Exercise 5: LLM-as-Judge for Groundedness
+### Exercise 4: LLM-as-Judge for Groundedness
 
 **Task**: Use an LLM to check if answers are supported by context (no hallucinations).
 
@@ -161,7 +133,7 @@ Format: Score: X / Reason: <explanation>"""
 
 ---
 
-### Exercise 6: LLM-as-Judge for Completeness
+### Exercise 5: LLM-as-Judge for Completeness
 
 **Task**: Check if answers fully address the question.
 
@@ -191,7 +163,7 @@ Format: Score: X / Reason: <explanation>"""
 
 ---
 
-### Exercise 7: Failure Analysis
+### Exercise 6: Failure Analysis
 
 **Task**: Find queries where retrieval performs poorly.
 
@@ -235,7 +207,7 @@ def analyze_failures(eval_queries, vector_store, threshold=0.5):
 
 ---
 
-### Exercise 8: Track Latency and Cost
+### Exercise 7: Track Latency and Cost
 
 **Task**: Measure operational metrics for production readiness.
 

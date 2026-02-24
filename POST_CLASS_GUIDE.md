@@ -278,7 +278,7 @@ Systematically compare approaches:
 **Q: "What metrics do you use to evaluate RAG quality?"**
 
 **A:** Two-layer evaluation:
-1. **Retrieval layer**: Precision@K, Recall@K, F1 Score, MRR
+1. **Retrieval layer**: Precision@K, Recall@K, F1 Score
 2. **Generation layer**: Groundedness (factual accuracy), Completeness (thoroughness), ROUGE/BLEU
 
 Must evaluate both—good retrieval with bad generation still fails, and vice versa.
@@ -514,7 +514,7 @@ Compare different approaches systematically
    - Answer: Strict prompt engineering, citation requirements, confidence thresholds, answer validation
 
 2. **"What metrics do you use to evaluate RAG quality?"**
-   - Answer: Precision@k, Recall@k, MRR for retrieval; ROUGE, BLEU, exact match for generation
+   - Answer: Precision@k, Recall@k, F1 for retrieval; ROUGE, BLEU, exact match for generation
 
 3. **"How do you handle long documents?"**
    - Answer: Chunking strategies, parent-child retrieval, sliding windows with overlap

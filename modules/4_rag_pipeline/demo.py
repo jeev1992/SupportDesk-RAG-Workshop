@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Hour 3: Building the Complete RAG Pipeline Demo
+Building the Complete RAG Pipeline Demo
 ================================================
 
 This demo teaches:
@@ -19,13 +19,15 @@ LEARNING RESOURCES:
 
 import json
 import os
+from operator import itemgetter  # Used for idiomatic LCEL key extraction (LangChain pattern)
 # LangChain is a framework for building LLM applications
 # Reference: https://python.langchain.com/docs/get_started/introduction
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI  # OpenAI integrations
-from langchain_community.vectorstores import Chroma  # Vector database for similarity search
+from langchain_chroma import Chroma  # Vector database for similarity search
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # Smart text chunking
 from langchain_core.documents import Document  # Document abstraction
-from langchain_core.prompts import ChatPromptTemplate  # Prompt templates
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder  # Prompt templates
+from langchain_core.messages import HumanMessage, AIMessage  # Chat history message types
 from langchain_core.output_parsers import StrOutputParser  # Parse LLM output
 from langchain_core.runnables import RunnablePassthrough  # Pass data through pipeline
 
@@ -34,8 +36,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 print("="*80)
-print("HOUR 3: BUILDING THE RAG PIPELINE")
+print("MODULE 4: RAG PIPELINE")
 print("="*80)
+print("""
+STRUCTURE:
+
+  PART 1: Data Ingestion & Vector Store
+  PART 2: Retriever Setup
+  PART 3: Prompt Engineering (Anti-Hallucination)
+  PART 4: Language Model
+  PART 5: LCEL Chain Assembly
+  PART 6: Testing the RAG System
+  PART 7: Validation & Fallback
+  PART 8: Conversation with History (Multi-Turn RAG)
+  PART 9: Interactive Demo
+""")
 
 # ============================================================================
 # PART 1: Data Ingestion & Vector Store Setup
@@ -101,11 +116,16 @@ print("✓ OpenAI embedding model ready")
 # It stores embeddings and enables fast similarity search
 # Reference: https://docs.trychroma.com/
 print("\nBuilding Chroma vector store...")
+# Always rebuild from scratch so repeated runs don't accumulate duplicate documents.
+import shutil
+if os.path.exists("./rag_vectorstore"):
+    shutil.rmtree("./rag_vectorstore")
 vector_store = Chroma.from_documents(
     documents=documents,  # Our support ticket documents
     embedding=embeddings,  # Embedding function to use
     collection_name="supportdesk_rag",  # Name for this collection
-    persist_directory="./rag_vectorstore"  # Where to save the database
+    persist_directory="./rag_vectorstore",  # Where to save the database
+    collection_metadata={"hnsw:space": "cosine"}  # Use cosine distance for similarity search
 )
 print("✓ Vector store created and persisted")
 
@@ -293,29 +313,30 @@ for query in test_queries:
         print("\n(LLM not configured - would generate answer here)")
 
 # ============================================================================
-# PART 7: Advanced - Custom Chain with Validation
+# PART 7: Validation & Fallback
 # ============================================================================
 print("\n" + "="*80)
 print("PART 7: Enhanced RAG with Answer Validation")
 print("="*80)
 
-def rag_with_validation(query, retriever, llm, min_similarity_score=0.7):
+def rag_with_validation(query, retriever, llm, min_similarity_score=0.5):
     """
     RAG pipeline with additional validation and fallback
     """
     # Retrieve documents with scores
     docs_with_scores = vector_store.similarity_search_with_score(query, k=3)
-    
+
     print(f"\nQuery: {query}")
-    print(f"\nRetrieval scores:")
+    print(f"\nRetrieval scores (cosine distance: 0=identical, 1=orthogonal, 2=opposite):")
     for doc, score in docs_with_scores:
         print(f"  - {doc.metadata['ticket_id']}: {score:.4f}")
-    
+
     # Check if best match is good enough
     best_score = docs_with_scores[0][1]
-    
+
+    # Cosine distance: lower = more similar. 0.5 means cosine_similarity < 0.5 — too weak to answer.
     if best_score > min_similarity_score:
-        print(f"\n⚠ Best match score ({best_score:.4f}) below threshold ({min_similarity_score})")
+        print(f"\n⚠ Best match distance ({best_score:.4f}) exceeds threshold ({min_similarity_score}) — too dissimilar to answer confidently")
         return "I don't have enough relevant information in the ticket history to answer that question confidently."
     
     # If good matches, proceed with RAG
@@ -336,7 +357,7 @@ rag_with_validation(
     "How to fix database connection timeouts?",
     retriever,
     llm,
-    min_similarity_score=0.7
+    min_similarity_score=0.5
 )
 
 print("\n2. Irrelevant query (should refuse):")
@@ -344,14 +365,96 @@ rag_with_validation(
     "What is the capital of France?",
     retriever,
     llm,
-    min_similarity_score=0.7
+    min_similarity_score=0.5
 )
 
 # ============================================================================
-# PART 8: Interactive Demo
+# PART 8: Conversation with History (Multi-Turn RAG)
 # ============================================================================
 print("\n" + "="*80)
-print("PART 8: Interactive SupportDesk Assistant")
+print("PART 8: Conversation with History (Multi-Turn RAG)")
+print("="*80)
+print("""
+Problem with single-turn RAG:
+  Turn 1: "How do I fix authentication failures?"  → good answer
+  Turn 2: "How long did it take to resolve?"       → loses context! "it" = ???
+
+Solution: Pass chat_history to the prompt so the LLM remembers previous turns.
+  MessagesPlaceholder injects prior HumanMessage / AIMessage objects into the prompt.
+""")
+
+if llm:
+    # Conversation-aware prompt with chat history slot
+    # MessagesPlaceholder expands the history list into the prompt at call time
+    conv_prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are SupportDesk AI. Answer using ONLY the ticket context below.
+Always cite ticket IDs. If the answer isn't in the context, say "I don't have that information."
+
+Context:
+{context}"""),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{question}"),
+    ])
+
+    # Chain: retrieve context for the CURRENT question, inject history, generate
+    # itemgetter is the idiomatic LangChain LCEL way to extract dict keys —
+    # it creates a Runnable that pulls a named field from the input dict.
+    # Reference: https://python.langchain.com/docs/expression_language/cookbook/memory
+    conv_chain = (
+        RunnablePassthrough.assign(
+            context=itemgetter("question") | retriever | format_docs
+        )
+        | conv_prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    def ask_with_history(question, history):
+        """Ask a question and automatically append the turn to history."""
+        answer = conv_chain.invoke({"question": question, "chat_history": history})
+        history.append(HumanMessage(content=question))
+        history.append(AIMessage(content=answer))
+        return answer
+
+    # ── Demonstrate a 3-turn conversation ──────────────────────────────────
+    print("Multi-turn conversation demo:\n")
+    history = []
+
+    q1 = "How do I fix authentication failures after a password reset?"
+    print(f"Turn 1 — User: {q1}")
+    a1 = ask_with_history(q1, history)
+    print(f"         Assistant: {a1[:300]}{'...' if len(a1) > 300 else ''}")
+
+    q2 = "How long did it typically take to resolve that kind of issue?"
+    print(f"\nTurn 2 — User: {q2}")
+    a2 = ask_with_history(q2, history)
+    print(f"         Assistant: {a2[:300]}{'...' if len(a2) > 300 else ''}")
+
+    q3 = "Were there any database-related tickets with similar resolution times?"
+    print(f"\nTurn 3 — User: {q3}")
+    a3 = ask_with_history(q3, history)
+    print(f"         Assistant: {a3[:300]}{'...' if len(a3) > 300 else ''}")
+
+    print(f"\n✓ History contains {len(history)} messages ({len(history)//2} complete turns)")
+    print("TIP: In production, cap history to avoid token bloat:")
+    print("       history = history[-6:]  # keep last 3 turns")
+
+else:
+    print("(LLM not configured — would run multi-turn conversation here)")
+    print("\nKey pattern:\n")
+    print("  history = []")
+    print("  answer = chain.invoke({'question': q, 'chat_history': history})")
+    print("  history.append(HumanMessage(content=q))")
+    print("  history.append(AIMessage(content=answer))")
+    print()
+    print("MessagesPlaceholder injects the history list directly into the prompt,")
+    print("so the LLM sees every prior turn when generating the next answer.")
+
+# ============================================================================
+# PART 9: Interactive Demo
+# ============================================================================
+print("\n" + "="*80)
+print("PART 9: Interactive SupportDesk Assistant")
 print("="*80)
 
 if qa_chain:
@@ -389,4 +492,4 @@ print("2. Strict prompt engineering prevents hallucinations")
 print("3. Always return source documents for verification")
 print("4. Implement fallbacks for low-confidence matches")
 print("5. Temperature=0 for deterministic, grounded answers")
-print("\nNext: Hour 4 - Evaluation & Metrics")
+print("\nNext: Evaluation & Metrics")

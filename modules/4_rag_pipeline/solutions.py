@@ -10,7 +10,7 @@ import json
 import os
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -59,7 +59,8 @@ embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
 vector_store = Chroma.from_documents(
     documents=documents,
     embedding=embeddings,
-    collection_name="solutions_test"
+    collection_name="solutions_test",
+    collection_metadata={"hnsw:space": "cosine"}
 )
 print("✓ Vector store ready")
 
@@ -205,7 +206,7 @@ def smart_rag(query, vector_store, llm, min_score_threshold=0.7):
     if not docs_with_scores:
         return "No relevant tickets found.", "no_results"
     
-    # Lower distance = better match (Chroma uses L2 distance)
+    # Lower distance = better match (cosine distance: 0=identical, 1=orthogonal)
     best_distance = docs_with_scores[0][1]
     
     print(f"  Best match distance: {best_distance:.4f}")
@@ -392,6 +393,7 @@ print("\n" + "=" * 80)
 print("EXERCISE 8: Multi-Turn Conversation")
 print("=" * 80)
 
+from operator import itemgetter
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -400,38 +402,49 @@ chat_history = []
 
 # Create conversational prompt with history placeholder
 conv_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful support assistant. Answer using the context provided. Context: {context}"),
-    MessagesPlaceholder(variable_name="history"),
-    ("human", "{question}")
+    ("system", """You are SupportDesk AI. Answer using ONLY the ticket context below.
+Always cite ticket IDs. If the answer isn't in the context, say "I don't have that information."
+
+Context:
+{context}"""),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{question}"),
 ])
 
-# Build conversational chain
-conv_chain = conv_prompt | llm | StrOutputParser()
+# RunnablePassthrough.assign() is used instead of the simple dict pattern because
+# the chain input is already a dict (question + chat_history). The dict pattern
+# would pass the whole dict to the retriever and silently drop chat_history.
+# .assign() passes all existing keys through unchanged and adds "context" on top.
+conv_chain = (
+    RunnablePassthrough.assign(
+        context=itemgetter("question") | retriever | format_docs
+        # itemgetter("question")  → extracts str from the input dict
+        # | retriever             → str → List[Document]
+        # | format_docs           → List[Document] → str
+    )
+    | conv_prompt   # receives {"question": ..., "chat_history": ..., "context": ...}
+    | llm
+    | StrOutputParser()
+)
 
-def ask_with_history(question):
-    """Ask a question with conversation history"""
-    context = format_docs(retriever.invoke(question))
-    response = conv_chain.invoke({
-        "context": context,
-        "history": chat_history,
-        "question": question
-    })
-    # Update history
-    chat_history.append(HumanMessage(content=question))
-    chat_history.append(AIMessage(content=response))
-    return response
+def ask_with_history(question, history):
+    """Invoke the chain and append the turn to history."""
+    answer = conv_chain.invoke({"question": question, "chat_history": history})
+    history.append(HumanMessage(content=question))
+    history.append(AIMessage(content=answer))
+    return answer
 
-# Simulate conversation
+# Simulate a 3-turn conversation
 conversation = [
     "What causes authentication failures?",
-    "How do I fix it?",  # Should remember we're talking about auth
-    "What about database issues?"  # New topic
+    "How do I fix it?",          # "it" → auth failures (remembered from turn 1)
+    "What about database issues?"  # new topic — no cross-contamination from history
 ]
 
 print("\nSimulated conversation:")
 for user_msg in conversation:
     print(f"\nUser: {user_msg}")
-    result = ask_with_history(user_msg)
+    result = ask_with_history(user_msg, chat_history)
     print(f"Assistant: {result[:200]}...")
 
 
@@ -467,25 +480,24 @@ Response:"""
     response = llm.invoke(detection_prompt)
     return response.content
 
-# Test hallucination detection
+# Test hallucination detection using the LCEL chain already set up above
 test_query = "How do I fix authentication issues?"
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever,
-    return_source_documents=True
+
+# Get answer and source docs using LCEL (no deprecated RetrievalQA)
+source_docs = retriever.invoke(test_query)
+answer_prompt = ChatPromptTemplate.from_template(
+    "Answer using ONLY the context. Cite ticket IDs.\n\nContext: {context}\n\nQuestion: {question}\n\nAnswer:"
 )
-result = qa_chain.invoke({"query": test_query})
+answer_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | answer_prompt | llm | StrOutputParser()
+)
+answer = answer_chain.invoke(test_query)
 
 print(f"\nQuery: {test_query}")
-print(f"Answer: {result['result'][:200]}...")
+print(f"Answer: {answer[:200]}...")
 print(f"\nHallucination check:")
-check_result = detect_hallucination(
-    test_query, 
-    result['result'], 
-    result['source_documents'],
-    llm
-)
+check_result = detect_hallucination(test_query, answer, source_docs, llm)
 print(check_result)
 
 
@@ -498,17 +510,17 @@ print("=" * 80)
 print("""
 Key Takeaways:
 ──────────────
-1. Prompt template design significantly affects answer quality
-2. k parameter trades off coverage vs relevance
-3. MMR provides diverse results when needed
-4. Fallbacks handle low-confidence situations gracefully
-5. Different chain types suit different use cases:
-   - stuff: Fast, good for small context
-   - map_reduce: Parallelizable, handles large docs
-   - refine: Highest quality, slow
-6. Streaming improves UX for long answers
-7. Memory enables multi-turn conversations
-8. LLM-as-judge can detect hallucinations
+1.  Prompt template design significantly affects answer quality
+2.  k parameter trades off coverage vs relevance
+3.  MMR provides diverse results when needed
+4.  Fallbacks handle low-confidence situations gracefully
+5.  Different chain types suit different use cases:
+    - stuff: Fast, good for small context
+    - map_reduce: Parallelizable, handles large docs
+    - refine: Highest quality, slow
+6.  Streaming improves UX for long answers
+7.  Memory enables multi-turn conversations
+8.  LLM-as-judge can detect hallucinations
 
 Next: Move on to Module 5 - Evaluation!
 """)

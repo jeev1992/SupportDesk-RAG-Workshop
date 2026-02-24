@@ -242,32 +242,55 @@ result = chain.invoke(query)  # Will print token by token!
 
 **Task**: Add message history so the assistant remembers previous questions.
 
+Wire the retrieval step *inside* the chain using `RunnablePassthrough.assign()` so that
+the chain receives a single dict and produces everything the prompt needs without any
+manual pre-processing outside the chain.
+
 ```python
+from operator import itemgetter
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnablePassthrough
 
 # Store chat history
 chat_history = []
 
 # Create conversational prompt
+# Note: variable_name must match the key in the input dict
 conv_prompt = ChatPromptTemplate.from_messages([
-    ("system", "Answer using context: {context}"),
-    MessagesPlaceholder(variable_name="history"),
-    ("human", "{question}")
+    ("system", """You are SupportDesk AI. Answer using ONLY the context below.
+Always cite ticket IDs. If the answer isn't in the context, say "I don't have that information."
+
+Context:
+{context}"""),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{question}"),
 ])
 
-# Build chain with history
-def ask_with_history(question):
-    context = format_docs(retriever.invoke(question))
-    chain = conv_prompt | llm | StrOutputParser()
-    response = chain.invoke({"context": context, "history": chat_history, "question": question})
-    chat_history.append(HumanMessage(content=question))
-    chat_history.append(AIMessage(content=response))
-    return response
+# TODO: Build the chain using RunnablePassthrough.assign() so that:
+#   - "question" and "chat_history" are passed through unchanged from the input dict
+#   - "context" is computed by extracting "question" from the dict, running it
+#     through the retriever, and formatting the resulting documents
+#
+# Hint: itemgetter("question") | retriever | format_docs
+conv_chain = (
+    RunnablePassthrough.assign(
+        context=# YOUR CODE HERE
+    )
+    | conv_prompt
+    | llm
+    | StrOutputParser()
+)
 
-# Test conversation - context carries over
-result1 = ask_with_history("What causes authentication failures?")
-result2 = ask_with_history("How do I fix it?")  # Remembers auth topic
+def ask_with_history(question, history):
+    answer = conv_chain.invoke({"question": question, "chat_history": history})
+    history.append(HumanMessage(content=question))
+    history.append(AIMessage(content=answer))
+    return answer
+
+# Test — "How do I fix it?" should remember we were talking about auth failures
+result1 = ask_with_history("What causes authentication failures?", chat_history)
+result2 = ask_with_history("How do I fix it?", chat_history)  # "it" = auth failures
 ```
 
 ---

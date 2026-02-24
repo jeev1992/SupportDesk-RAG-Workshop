@@ -203,57 +203,6 @@ def calculate_retrieval_metrics(retrieved_ids, relevant_ids, k):
     }
 ```
 
-### Mean Average Precision (MAP)
-
-```python
-def calculate_map(queries_results):
-    """Average precision across all queries"""
-    average_precisions = []
-    
-    for retrieved_ids, relevant_ids in queries_results:
-        precisions = []
-        relevant_count = 0
-        
-        for i, doc_id in enumerate(retrieved_ids, 1):
-            if doc_id in relevant_ids:
-                relevant_count += 1
-                precision_at_i = relevant_count / i
-                precisions.append(precision_at_i)
-        
-        if precisions:
-            avg_precision = sum(precisions) / len(relevant_ids)
-            average_precisions.append(avg_precision)
-    
-    return sum(average_precisions) / len(average_precisions)
-```
-
-### Reciprocal Rank (MRR)
-
-```python
-def calculate_mrr(queries_results):
-    """Position of first relevant document"""
-    reciprocal_ranks = []
-    
-    for retrieved_ids, relevant_ids in queries_results:
-        for i, doc_id in enumerate(retrieved_ids, 1):
-            if doc_id in relevant_ids:
-                reciprocal_ranks.append(1 / i)
-                break
-        else:
-            reciprocal_ranks.append(0)
-    
-    return sum(reciprocal_ranks) / len(reciprocal_ranks)
-```
-
-**Example:**
-```
-Query 1: First relevant at position 3 → RR = 1/3
-Query 2: First relevant at position 1 → RR = 1/1
-Query 3: First relevant at position 5 → RR = 1/5
-
-MRR = (1/3 + 1/1 + 1/5) / 3 = 0.53
-```
-
 ## Layer 2: Generation Evaluation
 
 ### The Challenge

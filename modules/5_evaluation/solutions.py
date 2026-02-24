@@ -170,44 +170,10 @@ for k in [1, 3, 5, 10]:
 
 
 # ============================================================================
-# Exercise 4: Calculate Average Precision (Easy)
+# Exercise 4: LLM-as-Judge for Groundedness (Medium)
 # ============================================================================
 print("\n" + "=" * 80)
-print("EXERCISE 4: Calculate Average Precision")
-print("=" * 80)
-
-def average_precision(retrieved_ids, relevant_ids):
-    """
-    AP = average of precision@k for all k where a relevant doc is found
-    """
-    precisions = []
-    relevant_count = 0
-    
-    for k, doc_id in enumerate(retrieved_ids, 1):
-        if doc_id in relevant_ids:
-            relevant_count += 1
-            precision_at_k = relevant_count / k
-            precisions.append(precision_at_k)
-    
-    return np.mean(precisions) if precisions else 0.0
-
-# Calculate AP for all queries
-ap_scores = []
-for query in eval_queries:
-    docs = vector_store.similarity_search(query['question'], k=5)
-    retrieved = [doc.metadata['ticket_id'] for doc in docs]
-    ap = average_precision(retrieved, query['relevant_ticket_ids'])
-    ap_scores.append(ap)
-
-print(f"\nMean Average Precision (MAP): {np.mean(ap_scores):.4f}")
-print("→ MAP considers ranking order: earlier relevant docs = higher score")
-
-
-# ============================================================================
-# Exercise 5: LLM-as-Judge for Groundedness (Medium)
-# ============================================================================
-print("\n" + "=" * 80)
-print("EXERCISE 5: LLM-as-Judge for Groundedness")
+print("EXERCISE 4: LLM-as-Judge for Groundedness")
 print("=" * 80)
 
 def evaluate_groundedness(answer, context_docs):
@@ -257,10 +223,10 @@ for i, query in enumerate(eval_queries[:2], 1):
 
 
 # ============================================================================
-# Exercise 6: LLM-as-Judge for Completeness (Medium)
+# Exercise 5: LLM-as-Judge for Completeness (Medium)
 # ============================================================================
 print("\n" + "=" * 80)
-print("EXERCISE 6: LLM-as-Judge for Completeness")
+print("EXERCISE 5: LLM-as-Judge for Completeness")
 print("=" * 80)
 
 def evaluate_completeness(question, answer, reference_answer=None):
@@ -310,10 +276,10 @@ for i, query in enumerate(eval_queries[:2], 1):
 
 
 # ============================================================================
-# Exercise 7: Failure Analysis (Medium)
+# Exercise 6: Failure Analysis (Medium)
 # ============================================================================
 print("\n" + "=" * 80)
-print("EXERCISE 7: Failure Analysis")
+print("EXERCISE 6: Failure Analysis")
 print("=" * 80)
 
 def analyze_failures(eval_queries, vector_store, threshold=0.5):
@@ -357,10 +323,10 @@ if failures:
 
 
 # ============================================================================
-# Exercise 8: Track Latency and Cost (Medium)
+# Exercise 7: Track Latency and Cost (Medium)
 # ============================================================================
 print("\n" + "=" * 80)
-print("EXERCISE 8: Track Latency and Cost")
+print("EXERCISE 7: Track Latency and Cost")
 print("=" * 80)
 
 class RAGMetrics:

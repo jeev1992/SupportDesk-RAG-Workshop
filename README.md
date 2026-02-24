@@ -19,8 +19,9 @@ This comprehensive workshop teaches you to build a production-ready Retrieval-Au
 ## 🚀 Quick Start
 
 ### 1. Install Python (one-time)
-- Install Python **3.10+** (recommended: **3.11**) from https://www.python.org/downloads/
+- Install Python **3.11 or 3.12** (recommended: **3.12**) from https://www.python.org/downloads/
 - During install on Windows, enable **"Add Python to PATH"**
+- ⚠️ **Python 3.13 and 3.14 are not yet supported** — `chromadb` depends on Pydantic V1 internals that were removed in Python 3.13+. Use 3.12.
 
 ### 2. Clone or open this repo
 ```bash
@@ -303,7 +304,7 @@ See [OpenAI Pricing](https://openai.com/pricing) for current rates.
 
 ## 🎯 Prerequisites
 
-- Python 3.10+ (recommended: 3.11)
+- Python 3.11 or 3.12 (recommended: 3.12) — **not 3.13/3.14**
 - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 - Basic understanding of Python
 - Familiarity with APIs (helpful but not required)
@@ -311,6 +312,17 @@ See [OpenAI Pricing](https://openai.com/pricing) for current rates.
 ---
 
 ## 🛠️ Troubleshooting
+
+### Python 3.13 / 3.14 — `chromadb` crashes on import
+`chromadb` uses Pydantic V1 internally, which Python 3.13+ broke. You will see:
+```
+pydantic.v1.errors.ConfigError: unable to infer type for attribute "chroma_server_nofile"
+```
+**Fix:** use Python 3.12. If you have it installed alongside 3.14, recreate the venv:
+```bash
+py -3.12 -m venv .venv
+```
+Then re-run the install steps.
 
 ### Virtual Environment Activation Fails (Windows PowerShell)
 If you see an execution policy error:

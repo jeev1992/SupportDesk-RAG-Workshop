@@ -16,7 +16,7 @@ import os
 import numpy as np
 from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from dotenv import load_dotenv
 
@@ -96,8 +96,12 @@ except Exception as e:
     exit(1)
 
 # Build vector store
-vector_store = FAISS.from_documents(documents, embeddings)
-print("✓ Vector store built with FAISS")
+vector_store = Chroma.from_documents(
+    documents=documents,
+    embedding=embeddings,
+    collection_name="eval_supportdesk"
+)
+print("✓ Vector store built with Chroma")
 
 # Create simple RAG function
 def generate_answer(query, k=3):
