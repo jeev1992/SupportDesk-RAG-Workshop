@@ -9,7 +9,7 @@
   {
     "query_id": "Q2",
     "question": "What causes database connection timeout errors?",
-    "relevant_ticket_ids": ["TICK-002"],
+    "relevant_ticket_ids": ["TICK-002", "TICK-010"],
     "category": "Database",
     "reference_answer": "Database connection pool was sized too small for peak load. Increase max_connections parameter, add connection pooling monitoring, and optimize long-running queries that hold connections."
   },
@@ -37,7 +37,7 @@
   {
     "query_id": "Q6",
     "question": "Emails not being delivered to users",
-    "relevant_ticket_ids": ["TICK-006"],
+    "relevant_ticket_ids": ["TICK-006", "TICK-013"],
     "category": "Email",
     "reference_answer": "Email service provider blacklisted sending IP due to spam complaints. Implement SPF, DKIM, and DMARC records, switch to dedicated IP address, and add email deliverability monitoring."
   },
@@ -51,7 +51,7 @@
   {
     "query_id": "Q8",
     "question": "File upload fails for large files",
-    "relevant_ticket_ids": ["TICK-008"],
+    "relevant_ticket_ids": ["TICK-008", "TICK-019"],
     "category": "File Upload",
     "reference_answer": "Nginx configured with default 1MB request body size limit. Update nginx.conf to set client_max_body_size to appropriate value and increase Node.js Express body-parser limit."
   },
@@ -65,7 +65,7 @@
   {
     "query_id": "Q10",
     "question": "Dashboard loading very slowly",
-    "relevant_ticket_ids": ["TICK-010"],
+    "relevant_ticket_ids": ["TICK-010", "TICK-005", "TICK-002"],
     "category": "Performance",
     "reference_answer": "Dashboard was making N+1 queries. Implement query optimization using JOIN statements, add database indexes on frequently queried columns, and introduce Redis caching for aggregate statistics."
   },
@@ -79,14 +79,14 @@
   {
     "query_id": "Q12",
     "question": "Scheduled reports not generating",
-    "relevant_ticket_ids": ["TICK-012"],
+    "relevant_ticket_ids": ["TICK-012", "TICK-019"],
     "category": "Reporting",
     "reference_answer": "Disk space was full on reports server. Implement automated cleanup of old reports, increase disk space, and add disk usage monitoring alerts."
   },
   {
     "query_id": "Q13",
     "question": "Webhooks timing out intermittently",
-    "relevant_ticket_ids": ["TICK-013"],
+    "relevant_ticket_ids": ["TICK-013", "TICK-017"],
     "category": "Integration",
     "reference_answer": "Increase timeout to 30 seconds, implement exponential backoff for retries, add webhook delivery status dashboard, and persist failed webhooks to dead letter queue."
   },

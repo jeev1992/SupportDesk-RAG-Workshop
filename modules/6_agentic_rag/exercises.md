@@ -205,7 +205,7 @@ def get_ticket_by_id(self, ticket_id: str) -> str:
 **Task**: Reuse existing memory code in `demo.py` and change only one setting.
 
 ```python
-# In Part 8, change the window size from k=2 to k=1 and compare behavior.
+# In Part 7, change the window size from k=2 to k=1 and compare behavior.
 apply_window(session_id, k_turns=1)
 ```
 
@@ -246,119 +246,6 @@ for test in test_cases:
 ```
 
 Goal: observe behavior quickly without writing a full evaluator.
-
----
-
-### Exercise 9: Memory Type Comparison
-
-**Task**: Observe how windowed history with `RunnableWithMessageHistory` affects what the agent remembers.
-
-```python
-from langchain_core.chat_history import InMemoryChatMessageHistory
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables.history import RunnableWithMessageHistory
-
-store = {}
-
-def get_history(session_id: str):
-    return store.setdefault(session_id, InMemoryChatMessageHistory())
-
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are SupportDesk AI."),
-    MessagesPlaceholder("history"),
-    ("human", "{question}"),
-])
-
-chain_with_history = RunnableWithMessageHistory(
-    prompt | llm,
-    get_history,
-    input_messages_key="question",
-    history_messages_key="history",
-)
-
-def apply_window(session_id: str, k_turns: int = 2):
-    history = store[session_id]
-    history.messages = history.messages[-(k_turns * 2):]
-
-# Simulate 4 conversation turns
-turns = [
-    ("What authentication issues have we seen?",   "TICK-001 reports login failures after password reset."),
-    ("How was TICK-001 resolved?",                  "Sessions were cleared and users forced to re-authenticate."),
-    ("Are there any database issues?",              "TICK-002 covers database connection timeouts."),
-    ("What was the fix for that?",                  "Increased connection pool size and added retry logic."),
-]
-
-session_id = "window-demo"
-for human, _ in turns:
-    chain_with_history.invoke(
-        {"question": human},
-        config={"configurable": {"session_id": session_id}},
-    )
-    apply_window(session_id, k_turns=2)
-
-# Inspect what's actually in memory
-messages = store[session_id].messages
-print(f"Messages retained: {len(messages)}")
-for msg in messages:
-    print(f"  [{type(msg).__name__}] {msg.content[:80]}")
-```
-
-**Questions**:
-- How many messages are retained with `k_turns=2`?
-- Which turn was dropped first?
-- Change `k_turns=1` — what happens to the agent's ability to answer "What was the fix for that?"
-
----
-
-### Exercise 10: Hybrid Routing
-
-**Task**: Complete only the TODO body (about 6–10 lines).
-
-```python
-import re
-
-def route_query(query: str) -> str:
-    """
-    Return 'direct' for simple lookups, 'agentic' for complex reasoning.
-
-    Direct signals:  specific ticket ID (TICK-XXX), statistics/overview requests
-    Agentic signals: how-to-fix, why, compare, multi-step queries
-    """
-    # TODO: implement routing logic using 2-3 regex checks
-    pass
-
-# Test your router
-test_cases = [
-    ("Show me TICK-003",                         "direct"),
-    ("How many tickets are there?",              "direct"),
-    ("How do I fix authentication failures?",    "agentic"),
-    ("Find all critical issues and compare",     "agentic"),
-    ("Why does the dashboard load slowly?",      "agentic"),
-]
-
-print(f"{'Query':<48} {'Expected':<10} {'Got':<10} {'Match'}")
-print("-" * 75)
-for query, expected in test_cases:
-    got = route_query(query) or "not implemented"
-    match = "✓" if got == expected else "✗"
-    print(f"{query:<48} {expected:<10} {got:<10} {match}")
-```
-
-**Extension**: Replace the regex heuristic with a one-shot LLM classifier:
-```python
-def route_query_llm(query: str, llm) -> str:
-    """Use an LLM to classify the query."""
-    prompt = f"""Classify this support query as 'direct' or 'agentic'.
-
-Direct: simple ticket lookup by ID, statistics, or a single-retrieval question.
-Agentic: troubleshooting, multi-step reasoning, comparisons, or complex analysis.
-
-Query: {query}
-
-Answer with exactly one word — direct or agentic:"""
-    result = llm.invoke(prompt).content.strip().lower()
-    return result if result in ('direct', 'agentic') else 'direct'
-```
 
 ---
 

@@ -19,6 +19,7 @@ LEARNING RESOURCES:
 
 import json
 import os
+import time
 from operator import itemgetter  # Used for idiomatic LCEL key extraction (LangChain pattern)
 # LangChain is a framework for building LLM applications
 # Reference: https://python.langchain.com/docs/get_started/introduction
@@ -118,13 +119,20 @@ print("✓ OpenAI embedding model ready")
 print("\nBuilding Chroma vector store...")
 # Always rebuild from scratch so repeated runs don't accumulate duplicate documents.
 import shutil
-if os.path.exists("./rag_vectorstore"):
-    shutil.rmtree("./rag_vectorstore")
+persist_directory = "./rag_vectorstore"
+if os.path.exists(persist_directory):
+    try:
+        shutil.rmtree(persist_directory)
+    except PermissionError:
+        # Windows may keep Chroma files locked briefly from a prior run.
+        # Fall back to a unique directory so the demo can continue.
+        persist_directory = f"./rag_vectorstore_{int(time.time())}"
+        print(f"⚠ Vector store directory is locked; using {persist_directory} instead")
 vector_store = Chroma.from_documents(
     documents=documents,  # Our support ticket documents
     embedding=embeddings,  # Embedding function to use
     collection_name="supportdesk_rag",  # Name for this collection
-    persist_directory="./rag_vectorstore",  # Where to save the database
+    persist_directory=persist_directory,  # Where to save the database
     collection_metadata={"hnsw:space": "cosine"}  # Use cosine distance for similarity search
 )
 print("✓ Vector store created and persisted")
@@ -180,11 +188,13 @@ print("="*80)
 prompt_template = """You are SupportDesk AI, a technical support assistant that helps engineers troubleshoot issues using historical support ticket data.
 
 CRITICAL RULES:
-1. Answer ONLY using information from the provided context
-2. If the answer is not in the context, say "I don't have enough information in the ticket history to answer that question."
-3. DO NOT make up information or use external knowledge
-4. Always cite the ticket ID when referencing information
-5. If multiple tickets are relevant, mention all of them
+1. Answer using ONLY information from the provided context.
+2. If the question is broad or underspecified, provide the best matching known issue(s) from context and state any assumptions.
+3. If context is partially relevant, still provide the most likely troubleshooting guidance from relevant tickets.
+4. If the answer is truly not present in context, say "I don't have enough information in the ticket history to answer that question."
+5. DO NOT make up information or use external knowledge.
+6. Always cite ticket IDs for every issue/resolution you mention.
+7. If multiple tickets are relevant, summarize each briefly.
 
 Context from support tickets:
 {context}
@@ -408,8 +418,11 @@ if llm:
     # Conversation-aware prompt with chat history slot
     # MessagesPlaceholder expands the history list into the prompt at call time
     conv_prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are SupportDesk AI. Answer using ONLY the ticket context below.
-Always cite ticket IDs. If the answer isn't in the context, say "I don't have that information."
+        ("system", """You are SupportDesk AI. Answer using the ticket context below and the chat history.
+    Use chat history to resolve references like "that issue" or "that ticket".
+    For factual claims, prioritize the retrieved context.
+    If information is not available in context or history, say "I don't have that information."
+    Always cite ticket IDs when available.
 
 Context:
 {context}"""),
@@ -445,16 +458,19 @@ Context:
     print(f"Turn 1 — User: {q1}")
     a1 = ask_with_history(q1, history)
     print(f"         Assistant: {a1[:300]}{'...' if len(a1) > 300 else ''}")
+    print(f"         [chat_history now has {len(history)} messages]")
 
-    q2 = "How long did it typically take to resolve that kind of issue?"
+    q2 = "What was the ticket ID for that issue?"
     print(f"\nTurn 2 — User: {q2}")
     a2 = ask_with_history(q2, history)
     print(f"         Assistant: {a2[:300]}{'...' if len(a2) > 300 else ''}")
+    print(f"         [chat_history now has {len(history)} messages]")
 
-    q3 = "Were there any database-related tickets with similar resolution times?"
+    q3 = "What was the resolution for that ticket?"
     print(f"\nTurn 3 — User: {q3}")
     a3 = ask_with_history(q3, history)
     print(f"         Assistant: {a3[:300]}{'...' if len(a3) > 300 else ''}")
+    print(f"         [chat_history now has {len(history)} messages]")
 
     print(f"\n✓ History contains {len(history)} messages ({len(history)//2} complete turns)")
     print("TIP: In production, cap history to avoid token bloat:")
