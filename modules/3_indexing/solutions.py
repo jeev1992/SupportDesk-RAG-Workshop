@@ -110,7 +110,7 @@ print("=" * 80)
 
 print("\nBuilding Tree Index with ALL documents (this may take 2-5 minutes)...")
 print(f"Processing {len(documents)} documents...")
-tree_index = TreeIndex.from_documents(documents, show_progress=True)
+tree_index = TreeIndex.from_documents(documents, num_children=5, show_progress=True)
 print("✓ Tree Index built")
 
 # Show tree structure
