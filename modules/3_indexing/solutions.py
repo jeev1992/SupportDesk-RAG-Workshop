@@ -13,6 +13,7 @@ import json
 import time
 import os
 import shutil
+import logging
 from dotenv import load_dotenv
 from llama_index.core import (
     VectorStoreIndex, SummaryIndex, TreeIndex, KeywordTableIndex,
@@ -105,13 +106,121 @@ print("EXERCISE 3: Change the Tree Index Branch Factor")
 print("=" * 80)
 
 # NOTE: Tree Index is SLOW to build (makes many LLM calls to generate summaries)
-# Skipping in solutions to avoid API timeouts
-# In the demo, the Tree Index is already built, so modifying branch_factor is fast
+# Building with all documents - this will take 2-5 minutes
 
-print("\n→ SKIPPED: Tree Index takes too long to build (many LLM calls)")
-print("→ To test: Modify the branch_factor in demo.py and run the demo instead")
-print("→ tree_query_engine = tree_index.as_query_engine(child_branch_factor=1)")
-print("→ tree_query_engine = tree_index.as_query_engine(child_branch_factor=3)")
+print("\nBuilding Tree Index with ALL documents (this may take 2-5 minutes)...")
+print(f"Processing {len(documents)} documents...")
+tree_index = TreeIndex.from_documents(documents, show_progress=True)
+print("✓ Tree Index built")
+
+# Show tree structure
+print("\n" + "-"*60)
+print("TREE INDEX STRUCTURE")
+print("-"*60)
+all_nodes = tree_index.index_struct.all_nodes
+root_nodes = tree_index.index_struct.root_nodes
+print(f"Total nodes in tree: {len(all_nodes)}")
+print(f"Root nodes: {len(root_nodes)}")
+
+# Display tree hierarchy
+def display_tree_structure(tree_index, max_depth=3):
+    """Display the tree structure with node summaries"""
+    from llama_index.core.schema import IndexNode
+    
+    all_nodes = tree_index.index_struct.all_nodes
+    root_node_ids = tree_index.index_struct.root_nodes
+    
+    def get_node_info(node_id, depth=0):
+        if depth > max_depth:
+            return
+        indent = "  " * depth
+        node_info = all_nodes.get(node_id)
+        if node_info:
+            # Get the summary text (truncated)
+            summary = str(node_info)[:60].replace('\n', ' ')
+            # node_id can be int or string
+            node_id_str = str(node_id)[:8] if len(str(node_id)) > 8 else str(node_id)
+            print(f"{indent}├── [Node {node_id_str}] {summary}...")
+            
+            # Check for children
+            children = getattr(node_info, 'child_indices', [])
+            if children:
+                print(f"{indent}    └── Children: {len(children)} branches")
+                for child_id in children[:3]:  # Show max 3 children
+                    get_node_info(child_id, depth + 1)
+                if len(children) > 3:
+                    print(f"{indent}        ... and {len(children) - 3} more")
+    
+    print("\nTree Hierarchy (showing first 3 levels):")
+    for i, root_id in enumerate(list(root_node_ids.keys())[:3]):
+        print(f"\nRoot {i+1}:")
+        get_node_info(root_id)
+    if len(root_node_ids) > 3:
+        print(f"\n... and {len(root_node_ids) - 3} more root nodes")
+
+display_tree_structure(tree_index)
+
+query = "How do I fix authentication issues?"
+print(f"\n{'='*60}")
+print(f"Query: '{query}'")
+print(f"{'='*60}")
+
+# Enable logging to see branch exploration
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("llama_index.indices.tree")
+
+def query_with_branch_info(tree_index, query, branch_factor):
+    """Query tree index and show which branches/nodes were explored"""
+    print(f"\n{'='*60}")
+    print(f"TESTING: child_branch_factor={branch_factor}")
+    print(f"{'='*60}")
+    print(f"→ This means the LLM will select the top {branch_factor} most relevant")
+    print(f"  branches at each level of the tree to explore.")
+    
+    tree_engine = tree_index.as_query_engine(
+        child_branch_factor=branch_factor,
+        verbose=True
+    )
+    
+    start = time.time()
+    response = tree_engine.query(query)
+    elapsed = time.time() - start
+    
+    print(f"\n  Query time: {elapsed:.2f}s")
+    
+    # Show source nodes that were retrieved
+    print(f"\n  BRANCHES EXPLORED - Source nodes retrieved ({len(response.source_nodes)}):")
+    for i, node in enumerate(response.source_nodes, 1):
+        node_text = node.node.get_content()[:80].replace('\n', ' ')
+        raw_id = getattr(node.node, 'node_id', 'N/A')
+        node_id = str(raw_id)[:8] if raw_id != 'N/A' else 'N/A'
+        score = f"{node.score:.4f}" if node.score else "N/A"
+        print(f"    {i}. Node [{node_id}] score={score}")
+        print(f"       Text: {node_text}...")
+    
+    print(f"\n  Final Answer:")
+    print(f"  {str(response)[:300]}...")
+    
+    return response
+
+# Test with different branch factors
+print("\n" + "="*60)
+print("COMPARISON: How branch_factor affects exploration")
+print("="*60)
+print("branch_factor=1: Most focused (fastest, may miss info)")
+print("branch_factor=2: Balanced (moderate speed & coverage)")
+print("branch_factor=3: Broadest (slowest, most thorough)")
+
+response_1 = query_with_branch_info(tree_index, query, branch_factor=1)
+response_2 = query_with_branch_info(tree_index, query, branch_factor=2)
+response_3 = query_with_branch_info(tree_index, query, branch_factor=3)
+
+print("\n" + "-"*60)
+print("SUMMARY")
+print("-"*60)
+print(f"branch_factor=1: {len(response_1.source_nodes)} source nodes retrieved")
+print(f"branch_factor=2: {len(response_2.source_nodes)} source nodes retrieved")
+print(f"branch_factor=3: {len(response_3.source_nodes)} source nodes retrieved")
 
 
 # ============================================================================

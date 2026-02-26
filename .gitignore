@@ -7,6 +7,7 @@ venv/
 rag_vectorstore/
 chroma_db/
 modules/6_agentic_rag/agent_vectorstore/
+solution_chroma_db/
 
 __pycache__/
 *.pyc
