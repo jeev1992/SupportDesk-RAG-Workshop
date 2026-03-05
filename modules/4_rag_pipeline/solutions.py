@@ -150,15 +150,67 @@ for k in [1, 3, 5, 10]:
     retriever_k = vector_store.as_retriever(search_kwargs={"k": k})
     docs = retriever_k.invoke(test_query)
     print(f"\nk={k}: Retrieved {len(docs)} documents")
-    for doc in docs[:3]:
+    for doc in docs:
         print(f"  - {doc.metadata['ticket_id']}: {doc.metadata['title'][:40]}...")
 
-# Test MMR (Maximal Marginal Relevance) for diversity
+# ── MMR (Maximal Marginal Relevance) ──────────────────────────────────
+#
+# Problem with plain similarity search:
+#   If you search "database issues", you might get 3 tickets that all
+#   describe the *exact same* connection timeout bug — redundant results
+#   that waste your context window.
+#
+# MMR solves this by balancing:
+#   - RELEVANCE  (similarity to query)
+#   - DIVERSITY  (dissimilarity to already-selected results)
+#
+# The MMR formula (Carbonell & Goldstein, 1998):
+#   MMR = argmax [ λ · Sim(doc, query) − (1−λ) · max Sim(doc, already_selected) ]
+#         λ controls the trade-off (Chroma defaults to 0.5)
+#
+# Two-stage algorithm:
+#   Stage 1 — Cast a wide net:
+#       Fetch the top `fetch_k` (here 10) most similar docs via cosine similarity.
+#   Stage 2 — Select diverse subset:
+#       From those 10 candidates, iteratively pick `k` (here 3) docs using MMR.
+#       Each pick maximizes relevance while penalizing similarity to prior picks.
+#
+# Example — searching "database issues" against the top-10 similarity candidates:
+#
+#   Rank | Ticket   | Topic                          | Similarity
+#   ─────┼──────────┼────────────────────────────────┼───────────
+#     1  | TICK-005 | DB connection timeout           | 0.92
+#     2  | TICK-012 | DB connection timeout (dup)     | 0.90
+#     3  | TICK-008 | DB connection timeout (variant) | 0.88
+#     4  | TICK-015 | DB deadlock issue               | 0.85
+#     5  | TICK-003 | DB migration failure            | 0.82
+#    ... | ...      | ...                             | ...
+#
+#   Plain similarity k=3 returns:
+#     → TICK-005, TICK-012, TICK-008  — three nearly identical timeout tickets!
+#
+#   MMR k=3, fetch_k=10 returns:
+#     Pick 1: TICK-005 (highest relevance)
+#     Pick 2: TICK-015 (relevant AND different from TICK-005 — deadlock vs timeout)
+#     Pick 3: TICK-003 (relevant AND different from both — migration topic)
+#     → Diverse coverage of different database problems.
+#
+# Rule of thumb: set fetch_k = 3×k to 5×k for good diversity without too much noise.
+#
+# When to use MMR vs similarity:
+#   - Similarity: precise query, want single best answer ("TICK-001 resolution")
+#   - MMR: broad query, want coverage across subtopics ("database issues")
 print("\n\nMMR search (diverse results):")
 retriever_mmr = vector_store.as_retriever(
-    search_type="mmr",
-    search_kwargs={"k": 3, "fetch_k": 10}
+    search_type="mmr",              # Use MMR instead of plain cosine similarity
+    search_kwargs={
+        "k": 3,                     # Final number of documents to return
+        "fetch_k": 10,              # Candidate pool size (fetched via similarity first)
+        # "lambda_mult": 0.5,       # Trade-off: 1.0 = pure relevance, 0.0 = pure diversity
+        #                           # Default 0.5 balances both equally.
+    }
 )
+# fetch_k > k is required — MMR needs a larger candidate pool to select diverse items from.
 docs_mmr = retriever_mmr.invoke(test_query)
 for doc in docs_mmr:
     print(f"  - {doc.metadata['ticket_id']}: {doc.metadata['title'][:40]}...")
@@ -269,6 +321,71 @@ for query, note in test_queries:
 # ============================================================================
 # Exercise 5: Compare Chain Types (Medium)
 # ============================================================================
+#
+# When you have multiple retrieved documents, how do you combine them
+# to generate a single answer?  This exercise compares three strategies:
+#
+# ── Strategy Overview ─────────────────────────────────────────────────
+#
+#   Strategy    | LLM Calls | Speed   | Quality | Best For
+#   ────────────┼───────────┼─────────┼─────────┼──────────────────────────────
+#   Stuff       | 1         | Fastest | Good    | Small context (< token limit)
+#   Map-Reduce  | N + 1     | Slow    | Good    | Many/large docs that won't
+#               |           |         |         | fit in one prompt
+#   Refine      | N         | Slowest | Best    | When quality > latency
+#
+# ── STUFF ─────────────────────────────────────────────────────────────
+#   Query → Retrieve 3 docs → Concatenate all into ONE prompt → LLM → Answer
+#
+#   ┌──────────────────────────────────────────┐
+#   │  Prompt:                                 │
+#   │  Context: [Doc1] --- [Doc2] --- [Doc3]   │  ← all docs concatenated
+#   │  Question: How do I fix DB timeouts?     │
+#   └──────────────────────────┬───────────────┘
+#                              ▼
+#                         LLM (1 call)
+#                              ▼
+#                           Answer
+#
+#   Pros: Fast (1 LLM call), simple to implement.
+#   Cons: Breaks if total context exceeds the model's token limit.
+#
+# ── MAP_REDUCE ────────────────────────────────────────────────────────
+#   Query → Retrieve 3 docs → Process EACH doc separately → Combine → Answer
+#
+#   Two phases:
+#     1. Map   — Each doc gets its own LLM call ("extract key info").
+#     2. Reduce — A final LLM call combines the summaries into one answer.
+#
+#                       ┌─── Doc1 → LLM → Summary1
+#                       │
+#   Query → Retrieve ───┼─── Doc2 → LLM → Summary2    (Map: 3 LLM calls)
+#                       │
+#                       └─── Doc3 → LLM → Summary3
+#                                   │
+#                                   ▼
+#                       Combine summaries → LLM → Final Answer  (Reduce: 1 call)
+#
+#   Pros: Handles unlimited docs (each fits in one prompt); map calls can
+#         run in parallel.
+#   Cons: Slower (N+1 LLM calls), more expensive, summaries may lose detail.
+#
+# ── REFINE ─────────────────────────────────────────────────────────────
+#   Query → Retrieve 3 docs → Process sequentially, refining each time
+#
+#   Doc1 → LLM → Draft answer
+#   Doc2 + Draft → LLM → Refined answer
+#   Doc3 + Refined → LLM → Final answer
+#
+#   Pros: Highest quality — each step builds on the previous answer.
+#   Cons: Slowest (sequential, can't parallelize), N serial LLM calls.
+#
+# ── For this support ticket system (small docs, k=3) ──────────────────
+#   STUFF is the right default — all 3 tickets easily fit within the
+#   context window, so there's no reason to pay the latency/cost of
+#   multiple LLM calls.
+#
+# ══════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 80)
 print("EXERCISE 5: Compare Chain Types")
 print("=" * 80)
@@ -287,7 +404,9 @@ strategies = {
 
 test_query = "How do I fix database timeouts?"
 
-# STUFF strategy (default) - all docs in one prompt
+# ── STUFF strategy (default) ──────────────────────────────────────────
+# All retrieved docs are "stuffed" into a single {context} variable
+# and sent to the LLM in ONE call.
 print("\nSTUFF strategy:")
 start = time.time()
 stuff_prompt = ChatPromptTemplate.from_template(
@@ -303,10 +422,14 @@ result = stuff_chain.invoke(test_query)
 print(f"  Time: {time.time() - start:.2f}s")
 print(f"  Answer: {result[:150]}...")
 
-# MAP_REDUCE simulation - process docs individually then summarize
+# ── MAP_REDUCE strategy ───────────────────────────────────────────────
+# Phase 1 (Map):  Each doc → individual LLM call → summary
+# Phase 2 (Reduce): All summaries → one LLM call → final answer
 print("\nMAP_REDUCE strategy:")
 start = time.time()
 docs = retriever.invoke(test_query)
+
+# Map phase: extract key info from each document independently
 individual_answers = []
 for doc in docs:
     single_prompt = ChatPromptTemplate.from_template(
@@ -314,7 +437,8 @@ for doc in docs:
     )
     chain = single_prompt | llm | StrOutputParser()
     individual_answers.append(chain.invoke({"doc": doc.page_content}))
-    
+
+# Reduce phase: combine all per-doc summaries into a single coherent answer
 combine_prompt = ChatPromptTemplate.from_template(
     "Combine these points to answer: {question}\n\nPoints:\n{summaries}"
 )
@@ -323,9 +447,55 @@ result = combine_chain.invoke({"question": test_query, "summaries": "\n".join(in
 print(f"  Time: {time.time() - start:.2f}s")
 print(f"  Answer: {result[:150]}...")
 
-print("\n→ 'stuff': Fastest, concatenates all docs into one prompt")
-print("→ 'map_reduce': Parallel processing, good for many docs")
-print("→ 'refine': Iterative, highest quality but slowest (not shown - similar to map_reduce)")
+# ── REFINE strategy ───────────────────────────────────────────────────
+# Process docs sequentially. Start with the first doc to produce a draft,
+# then feed each subsequent doc + the current draft to the LLM to refine.
+#
+#   Doc1 → LLM → Draft answer
+#   Doc2 + Draft → LLM → Refined answer
+#   Doc3 + Refined → LLM → Final answer
+#
+# Each step can incorporate new info AND correct earlier mistakes.
+print("\nREFINE strategy:")
+start = time.time()
+docs = retriever.invoke(test_query)
+
+# Step 1: Generate initial draft from the first document
+initial_prompt = ChatPromptTemplate.from_template(
+    "Answer the question using only this context.\n\n"
+    "Context: {context}\n\nQuestion: {question}\n\nAnswer:"
+)
+initial_chain = initial_prompt | llm | StrOutputParser()
+current_answer = initial_chain.invoke({
+    "context": docs[0].page_content,
+    "question": test_query
+})
+
+# Steps 2..N: Refine the draft with each remaining document
+refine_prompt = ChatPromptTemplate.from_template(
+    "Here is an existing answer to the question:\n\n"
+    "Existing answer: {existing_answer}\n\n"
+    "Now consider this additional context:\n{context}\n\n"
+    "Question: {question}\n\n"
+    "Refine the existing answer using the new context. "
+    "If the new context isn't useful, return the existing answer unchanged.\n\n"
+    "Refined answer:"
+)
+refine_chain = refine_prompt | llm | StrOutputParser()
+
+for doc in docs[1:]:  # Iterate over remaining docs (skip the first)
+    current_answer = refine_chain.invoke({
+        "existing_answer": current_answer,
+        "context": doc.page_content,
+        "question": test_query
+    })
+
+print(f"  Time: {time.time() - start:.2f}s")
+print(f"  Answer: {current_answer[:150]}...")
+
+print("\n→ 'stuff': Fastest (1 LLM call), concatenates all docs into one prompt")
+print("→ 'map_reduce': Parallel processing (N+1 calls), good for many docs")
+print("→ 'refine': Iterative (N sequential calls), highest quality but slowest")
 
 
 # ============================================================================
@@ -383,13 +553,15 @@ streaming_llm = ChatOpenAI(
 )
 
 # Build streaming chain
-prompt = ChatPromptTemplate.from_template("""Answer using the context. Be concise.
+prompt = ChatPromptTemplate.from_template("""Answer using the context. Provide a detailed, thorough response.
+Include step-by-step troubleshooting instructions, root causes, and preventive measures.
+Cite ticket IDs for every fact.
 
 Context: {context}
 
 Question: {question}
 
-Answer:""")
+Detailed Answer:""")
 
 streaming_chain = (
     {"context": retriever | format_docs, "question": RunnablePassthrough()}
@@ -399,7 +571,7 @@ streaming_chain = (
 )
 
 print("\nStreaming response:")
-query = "What causes database connection issues?"
+query = "What causes database connection issues and how do I troubleshoot and prevent them?"
 result = streaming_chain.invoke(query)
 print("\n")  # Newline after streaming
 
@@ -418,6 +590,29 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 # Store chat history
 chat_history = []
 
+# ── Step 1: Query Reformulation ───────────────────────────────────────
+# Problem: The retriever only sees the raw question string.
+#   Turn 1: "What causes authentication failures?" → retriever works fine
+#   Turn 2: "How do I fix it?"                     → retriever gets "it" — no context!
+#
+# Solution: Use the LLM to rewrite follow-up questions into standalone queries
+# BEFORE they reach the retriever.
+#   "How do I fix it?" + chat_history → "How do I fix authentication failures?"
+#
+# This is called "query condensing" or "history-aware retrieval".
+condense_prompt = ChatPromptTemplate.from_messages([
+    ("system",
+     "Given the chat history and a follow-up question, rephrase the "
+     "follow-up as a standalone question that includes all necessary "
+     "context from the history. If the question is already standalone, "
+     "return it unchanged."),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{question}"),
+])
+
+# Chain that rewrites the question: dict → standalone question string
+condense_chain = condense_prompt | llm | StrOutputParser()
+
 # Create conversational prompt with history placeholder
 conv_prompt = ChatPromptTemplate.from_messages([
     ("system", """You are SupportDesk AI. Answer using ONLY the ticket context below.
@@ -429,18 +624,31 @@ Context:
     ("human", "{question}"),
 ])
 
-# RunnablePassthrough.assign() is used instead of the simple dict pattern because
-# the chain input is already a dict (question + chat_history). The dict pattern
-# would pass the whole dict to the retriever and silently drop chat_history.
-# .assign() passes all existing keys through unchanged and adds "context" on top.
+# ── Step 2: Build the full chain ──────────────────────────────────────
+# Flow:
+#   Input: {"question": str, "chat_history": List[Message]}
+#     │
+#     ├─→ condense_chain  → standalone question (str)
+#     │                        │
+#     │                        ├─→ retriever → format_docs → context (str)
+#     │                        │
+#     ├─→ (passes through chat_history and question unchanged)
+#     │
+#     ▼
+#   conv_prompt  → receives {context, chat_history, question}
+#     │
+#     ▼
+#   LLM → StrOutputParser → answer (str)
 conv_chain = (
+    # First, rewrite the question into a standalone form
     RunnablePassthrough.assign(
-        context=itemgetter("question") | retriever | format_docs
-        # itemgetter("question")  → extracts str from the input dict
-        # | retriever             → str → List[Document]
-        # | format_docs           → List[Document] → str
+        standalone=condense_chain
     )
-    | conv_prompt   # receives {"question": ..., "chat_history": ..., "context": ...}
+    # Then, use the standalone question to retrieve relevant docs
+    | RunnablePassthrough.assign(
+        context=itemgetter("standalone") | retriever | format_docs
+    )
+    | conv_prompt
     | llm
     | StrOutputParser()
 )
@@ -449,18 +657,36 @@ def ask_with_history(question, history):
     """
     Execute one conversational turn and persist memory.
 
-    `history` is a mutable list of HumanMessage/AIMessage objects.
-    Appending both user question and assistant answer enables follow-up context.
+    If chat_history is empty (first turn), skip the condense step and
+    send the question directly to the retriever — no LLM rewrite needed.
+    For follow-up turns, condense the question first so the retriever
+    gets a standalone query instead of vague references like "it" or "that".
     """
-    answer = conv_chain.invoke({"question": question, "chat_history": history})
+    if not history:
+        # First turn: no history to condense, retrieve directly with original question
+        standalone = question
+    else:
+        # Follow-up turn: rewrite the question using history context
+        # e.g. "How do I fix it?" → "How do I fix authentication failures?"
+        standalone = condense_chain.invoke({"question": question, "chat_history": history})
+
+    # Retrieve docs using the standalone query and generate the answer
+    context = format_docs(retriever.invoke(standalone))
+    answer = (conv_prompt | llm | StrOutputParser()).invoke({
+        "context": context,
+        "chat_history": history,
+        "question": question,  # Show the original question in the prompt, not the rewritten one
+    })
+
     history.append(HumanMessage(content=question))
     history.append(AIMessage(content=answer))
     return answer
 
 # Simulate a 3-turn conversation
+# Use specific queries that match ticket content for reliable retrieval
 conversation = [
-    "What causes authentication failures?",
-    "How do I fix it?",          # "it" → auth failures (remembered from turn 1)
+    "Why are users unable to log in after a password reset?",
+    "How do I fix it?",          # "it" → login issue (remembered from turn 1)
     "What about database issues?"  # new topic — no cross-contamination from history
 ]
 

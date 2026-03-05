@@ -145,25 +145,71 @@ def rag_with_validation(query, retriever, llm, min_similarity_score=0.5):
 
 ### Exercise 5: Compare Chain Types
 
-**Task**: Compare strategies with very small edits (do not implement full map-reduce).
+**Task**: Implement and compare three strategies for combining retrieved documents.
 
+When you have multiple retrieved docs, how do you combine them to generate an answer?
+
+**Strategy 1 — STUFF (default):** All docs concatenated into one prompt, one LLM call.
 ```python
-# Keep chain structure unchanged.
-# Only edit retriever config in place and compare outputs:
+stuff_prompt = ChatPromptTemplate.from_template(
+    "Answer using the context:\n\nContext: {context}\n\nQuestion: {question}"
+)
+stuff_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | stuff_prompt | llm | StrOutputParser()
+)
+```
 
-# Run 1: similarity
-retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+**Strategy 2 — MAP_REDUCE:** Process each doc separately, then combine summaries.
+```python
+# Map phase: extract key info from each doc independently
+docs = retriever.invoke(test_query)
+individual_answers = []
+for doc in docs:
+    single_prompt = ChatPromptTemplate.from_template(
+        "Extract key info about this issue:\n{doc}\n\nKey points:"
+    )
+    chain = single_prompt | llm | StrOutputParser()
+    individual_answers.append(chain.invoke({"doc": doc.page_content}))
 
-# Run 2: mmr
-retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 3, "fetch_k": 10})
+# Reduce phase: combine summaries into one answer
+combine_prompt = ChatPromptTemplate.from_template(
+    "Combine these points to answer: {question}\n\nPoints:\n{summaries}"
+)
+combine_chain = combine_prompt | llm | StrOutputParser()
+result = combine_chain.invoke({"question": test_query, "summaries": "\n".join(individual_answers)})
+```
+
+**Strategy 3 — REFINE:** Process docs sequentially, refining the answer each time.
+```python
+# Step 1: Draft answer from first doc
+initial_prompt = ChatPromptTemplate.from_template(
+    "Answer the question using only this context.\n\n"
+    "Context: {context}\n\nQuestion: {question}\n\nAnswer:"
+)
+current_answer = (initial_prompt | llm | StrOutputParser()).invoke({
+    "context": docs[0].page_content, "question": test_query
+})
+
+# Steps 2..N: Refine with each remaining doc
+refine_prompt = ChatPromptTemplate.from_template(
+    "Existing answer: {existing_answer}\n\n"
+    "Additional context:\n{context}\n\nQuestion: {question}\n\n"
+    "Refine the answer using the new context. If not useful, return unchanged.\n\nRefined answer:"
+)
+for doc in docs[1:]:
+    current_answer = (refine_prompt | llm | StrOutputParser()).invoke({
+        "existing_answer": current_answer, "context": doc.page_content, "question": test_query
+    })
 ```
 
 **Compare for query `"How do I fix database timeouts?"`**:
-- Speed
-- Answer quality  
-- Best use cases
 
-Keep this exercise to retriever-line changes only.
+| Strategy | LLM Calls | Speed | Best For |
+|----------|-----------|-------|----------|
+| Stuff | 1 | Fastest | Small context (< token limit) |
+| Map-Reduce | N+1 | Slow | Many/large docs |
+| Refine | N | Slowest | Highest quality answers |
 
 ---
 
@@ -210,9 +256,26 @@ streaming_llm = ChatOpenAI(
     callbacks=[StreamingStdOutCallbackHandler()]
 )
 
-# Use in your chain
-chain = your_prompt | streaming_llm | StrOutputParser()
-result = chain.invoke(query)  # Will print token by token!
+# Use a detailed prompt so the response is long enough to see streaming in action
+prompt = ChatPromptTemplate.from_template("""Answer using the context. Provide a detailed, thorough response.
+Include step-by-step troubleshooting instructions, root causes, and preventive measures.
+Cite ticket IDs for every fact.
+
+Context: {context}
+
+Question: {question}
+
+Detailed Answer:""")
+
+streaming_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | streaming_llm
+    | StrOutputParser()
+)
+
+query = "What causes database connection issues and how do I troubleshoot and prevent them?"
+result = streaming_chain.invoke(query)  # Will print token by token!
 ```
 
 ---
@@ -221,9 +284,13 @@ result = chain.invoke(query)  # Will print token by token!
 
 **Task**: Add message history so the assistant remembers previous questions.
 
-Wire the retrieval step *inside* the chain using `RunnablePassthrough.assign()` so that
-the chain receives a single dict and produces everything the prompt needs without any
-manual pre-processing outside the chain.
+There are **two problems** to solve:
+1. The LLM needs chat history to understand context ("that issue", "it", etc.)
+2. The **retriever** also needs context — it only sees the raw question string,
+   so "How do I fix it?" retrieves random docs instead of auth-related ones.
+
+**Solution**: Add a **query reformulation** step that rewrites follow-up questions
+into standalone queries before they reach the retriever.
 
 ```python
 from operator import itemgetter
@@ -231,11 +298,24 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 
-# Store chat history
 chat_history = []
 
-# Create conversational prompt
-# Note: variable_name must match the key in the input dict
+# Step 1: Query reformulation prompt
+# Rewrites follow-ups into standalone queries using chat history
+# e.g. "How do I fix it?" → "How do I fix authentication failures?"
+condense_prompt = ChatPromptTemplate.from_messages([
+    ("system",
+     "Given the chat history and a follow-up question, rephrase the "
+     "follow-up as a standalone question that includes all necessary "
+     "context from the history. If the question is already standalone, "
+     "return it unchanged."),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{question}"),
+])
+
+condense_chain = condense_prompt | llm | StrOutputParser()
+
+# Step 2: Conversational prompt with context and history
 conv_prompt = ChatPromptTemplate.from_messages([
     ("system", """You are SupportDesk AI. Answer using ONLY the context below.
 Always cite ticket IDs. If the answer isn't in the context, say "I don't have that information."
@@ -246,30 +326,28 @@ Context:
     ("human", "{question}"),
 ])
 
-# TODO: Build the chain using RunnablePassthrough.assign() so that:
-#   - "question" and "chat_history" are passed through unchanged from the input dict
-#   - "context" is computed by extracting "question" from the dict, running it
-#     through the retriever, and formatting the resulting documents
+# TODO: Build ask_with_history() so that:
+#   - On the first turn (empty history), skip condensing and retrieve directly
+#   - On follow-up turns, use condense_chain to rewrite the question,
+#     then retrieve using the standalone query
+#   - Always pass the ORIGINAL question (not rewritten) to the final prompt
 #
-# Hint: itemgetter("question") | retriever | format_docs
-conv_chain = (
-    RunnablePassthrough.assign(
-        context=# YOUR CODE HERE
-    )
-    | conv_prompt
-    | llm
-    | StrOutputParser()
-)
+# Hint:
+#   standalone = condense_chain.invoke({"question": q, "chat_history": history})
+#   context = format_docs(retriever.invoke(standalone))
 
 def ask_with_history(question, history):
-    answer = conv_chain.invoke({"question": question, "chat_history": history})
-    history.append(HumanMessage(content=question))
-    history.append(AIMessage(content=answer))
-    return answer
+    # YOUR CODE HERE:
+    # 1. If history is empty, standalone = question
+    # 2. Otherwise, standalone = condense_chain.invoke(...)
+    # 3. Retrieve context using standalone
+    # 4. Generate answer using conv_prompt with original question
+    pass
 
 # Test — "How do I fix it?" should remember we were talking about auth failures
 result1 = ask_with_history("What causes authentication failures?", chat_history)
 result2 = ask_with_history("How do I fix it?", chat_history)  # "it" = auth failures
+result3 = ask_with_history("What about database issues?", chat_history)  # new topic
 ```
 
 ---

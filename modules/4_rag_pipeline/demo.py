@@ -20,7 +20,7 @@ LEARNING RESOURCES:
 import json
 import os
 import time
-from operator import itemgetter  # Used for idiomatic LCEL key extraction (LangChain pattern)
+from operator import itemgetter  # Used in exercises/solutions for LCEL key extraction
 # LangChain is a framework for building LLM applications
 # Reference: https://python.langchain.com/docs/get_started/introduction
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI  # OpenAI integrations
@@ -416,12 +416,33 @@ Problem with single-turn RAG:
   Turn 1: "How do I fix authentication failures?"  → good answer
   Turn 2: "How long did it take to resolve?"       → loses context! "it" = ???
 
-Solution: Pass chat_history to the prompt so the LLM remembers previous turns.
-  MessagesPlaceholder injects prior HumanMessage / AIMessage objects into the prompt.
+Solution: Two-part fix:
+  1. MessagesPlaceholder injects prior HumanMessage / AIMessage objects into the prompt
+     so the LLM can understand references like "that issue" or "it".
+  2. Query reformulation rewrites follow-up questions into standalone queries
+     BEFORE retrieval, so the retriever searches for the right documents.
+     e.g. "How do I fix it?" + history → "How do I fix authentication failures?"
 """)
 
 if llm:
-    # Conversation-aware prompt with chat history slot
+    # ── Step 1: Query Reformulation ────────────────────────────────────
+    # The retriever only sees the raw question string.
+    # "What was the resolution for that ticket?" → retriever gets vague query.
+    # Fix: Use the LLM to rewrite follow-ups into standalone queries first.
+    condense_prompt = ChatPromptTemplate.from_messages([
+        ("system",
+         "Given the chat history and a follow-up question, rephrase the "
+         "follow-up as a standalone question that includes all necessary "
+         "context from the history. If the question is already standalone, "
+         "return it unchanged."),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{question}"),
+    ])
+
+    # Chain that rewrites the question: dict → standalone question string
+    condense_chain = condense_prompt | llm | StrOutputParser()
+
+    # ── Step 2: Conversation-aware prompt ──────────────────────────────
     # MessagesPlaceholder expands the history list into the prompt at call time
     conv_prompt = ChatPromptTemplate.from_messages([
         ("system", """You are SupportDesk AI. Answer using the ticket context below and the chat history.
@@ -436,22 +457,33 @@ Context:
         ("human", "{question}"),
     ])
 
-    # Chain: retrieve context for the CURRENT question, inject history, generate
-    # itemgetter is the idiomatic LangChain LCEL way to extract dict keys —
-    # it creates a Runnable that pulls a named field from the input dict.
-    # Reference: https://python.langchain.com/docs/expression_language/cookbook/memory
-    conv_chain = (
-        RunnablePassthrough.assign(
-            context=itemgetter("question") | retriever | format_docs
-        )
-        | conv_prompt
-        | llm
-        | StrOutputParser()
-    )
-
     def ask_with_history(question, history):
-        """Ask a question and automatically append the turn to history."""
-        answer = conv_chain.invoke({"question": question, "chat_history": history})
+        """Ask a question with query reformulation and history tracking.
+        
+        On the first turn (empty history), skip the condense step and send
+        the question directly to the retriever. On follow-up turns, rewrite
+        the question into a standalone query so the retriever finds the
+        right documents (e.g. "that ticket" → "TICK-001").
+        """
+        if not history:
+            # First turn: no history to condense, retrieve directly
+            standalone = question
+        else:
+            # Follow-up turn: rewrite using history context
+            # e.g. "What was the resolution for that ticket?" → 
+            #      "What was the resolution for ticket TICK-001?"
+            standalone = condense_chain.invoke({
+                "question": question, "chat_history": history
+            })
+
+        # Retrieve docs using the standalone query and generate the answer
+        context = format_docs(retriever.invoke(standalone))
+        answer = (conv_prompt | llm | StrOutputParser()).invoke({
+            "context": context,
+            "chat_history": history,
+            "question": question,  # Original question, not the rewritten one
+        })
+
         history.append(HumanMessage(content=question))
         history.append(AIMessage(content=answer))
         return answer
@@ -486,12 +518,24 @@ else:
     print("(LLM not configured — would run multi-turn conversation here)")
     print("\nKey pattern:\n")
     print("  history = []")
-    print("  answer = chain.invoke({'question': q, 'chat_history': history})")
+    print()
+    print("  # Step 1: Rewrite follow-up into standalone query (skip if no history)")
+    print("  if history:")
+    print("      standalone = condense_chain.invoke({'question': q, 'chat_history': history})")
+    print("  else:")
+    print("      standalone = q")
+    print()
+    print("  # Step 2: Retrieve using standalone query, generate with original question")
+    print("  context = format_docs(retriever.invoke(standalone))")
+    print("  answer = (conv_prompt | llm | StrOutputParser()).invoke({")
+    print("      'context': context, 'chat_history': history, 'question': q")
+    print("  })")
+    print()
     print("  history.append(HumanMessage(content=q))")
     print("  history.append(AIMessage(content=answer))")
     print()
-    print("MessagesPlaceholder injects the history list directly into the prompt,")
-    print("so the LLM sees every prior turn when generating the next answer.")
+    print("Query reformulation ensures the retriever gets meaningful queries")
+    print("instead of vague pronouns like 'it' or 'that ticket'.")
 
 # ============================================================================
 # PART 9: Interactive Demo
