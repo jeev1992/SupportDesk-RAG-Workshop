@@ -123,7 +123,9 @@ with open('../../data/synthetic_tickets.json', 'r', encoding='utf-8') as f:
 documents = []
 for ticket in tickets:
     # Combine all fields into content (rich context for embedding)
-    content = f"""Title: {ticket['title']}
+    # IMPORTANT: Include ticket_id in text so keyword index can find it!
+    content = f"""Ticket ID: {ticket['ticket_id']}
+Title: {ticket['title']}
 Description: {ticket['description']}
 Resolution: {ticket['resolution']}
 Category: {ticket['category']}

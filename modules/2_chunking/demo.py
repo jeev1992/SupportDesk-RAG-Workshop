@@ -411,6 +411,15 @@ query = "Authentication problems after password reset"
 
 print("\nBuilding Chroma vector store...")
 
+# Clean up any existing collection to avoid duplicates on re-run
+# from_documents() APPENDS to existing collections, so without this
+# you'd get duplicate documents (and duplicate search results!) each run
+existing_store = Chroma(
+    collection_name="support_tickets",
+    persist_directory="./chroma_db"
+)
+existing_store.delete_collection()
+
 # from_documents() handles everything:
 #   1. Extracts text from each Document
 #   2. Generates embeddings via the embedding model
